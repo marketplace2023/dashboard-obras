@@ -82,6 +82,39 @@ type BimPartidaRow = {
   precio_unitario: string
   importe_total: string
   orden: number
+  materiales?: BimPartidaMaterial[]
+}
+
+type BimPartidaMaterial = {
+  id: string
+  partida_id: string
+  recurso_id: string | null
+  tipo: BimInsumoTipo
+  codigo: string
+  descripcion: string
+  unidad: string
+  cantidad: string
+  costo: string
+  desperdicio_pct: string
+  total: string
+  orden: number
+}
+
+type BimInsumoTipo = 'material' | 'equipo' | 'mano_obra'
+
+type EditingInsumos = {
+  partida: BimPartidaRow
+  tipo: BimInsumoTipo
+  insumos: BimPartidaMaterial[]
+}
+
+type BimMaterialRecurso = {
+  id: string
+  codigo: string
+  descripcion: string
+  unidad: string
+  tipo: string
+  precio: string
 }
 
 type BimCapituloNodo = {
@@ -204,10 +237,22 @@ function PartidasPanel({ token, onMessage }: PartidasPanelProps) {
   const [loadingDetail, setLoadingDetail] = useState(false)
 
   // ── Edit / delete partida ─────────────────────────────────────
-  type EditingPartida = { id: string; cantidad: string; precio_unitario: string }
-  const [editingPartida, setEditingPartida] = useState<EditingPartida | null>(null)
+  const [editingInsumos, setEditingInsumos] = useState<EditingInsumos | null>(null)
   const [savingPartida, setSavingPartida] = useState(false)
   const [deletingPartidaId, setDeletingPartidaId] = useState<string | null>(null)
+  const [loadingEditInsumos, setLoadingEditInsumos] = useState(false)
+  const [savingInsumoId, setSavingInsumoId] = useState<string | null>(null)
+  const [deletingInsumoId, setDeletingInsumoId] = useState<string | null>(null)
+  const [resourcesByTipo, setResourcesByTipo] = useState<Record<BimInsumoTipo, BimMaterialRecurso[]>>({
+    material: [],
+    equipo: [],
+    mano_obra: [],
+  })
+  const [loadingResourcesByTipo, setLoadingResourcesByTipo] = useState<Record<BimInsumoTipo, boolean>>({
+    material: false,
+    equipo: false,
+    mano_obra: false,
+  })
 
   // ── Load obras ────────────────────────────────────────────────
   useEffect(() => {
@@ -305,6 +350,38 @@ function PartidasPanel({ token, onMessage }: PartidasPanelProps) {
       .finally(() => {
         if (active) setLoadingApus(false)
       })
+    return () => {
+      active = false
+    }
+  }, [bimHeaders])
+
+  useEffect(() => {
+    let active = true
+    const tipos: BimInsumoTipo[] = ['material', 'equipo', 'mano_obra']
+    setLoadingResourcesByTipo({ material: true, equipo: true, mano_obra: true })
+
+    void Promise.all(
+      tipos.map(async (tipo) => {
+        const r = await fetch(`${API_BASE_URL}/precios-unitarios/recursos?tipo=${tipo}`, { headers: bimHeaders })
+        const data = await r.json() as unknown
+        return { tipo, list: unwrapList<BimMaterialRecurso>(data) }
+      }),
+    )
+      .then((results) => {
+        if (!active) return
+        setResourcesByTipo({
+          material: results.find((item) => item.tipo === 'material')?.list ?? [],
+          equipo: results.find((item) => item.tipo === 'equipo')?.list ?? [],
+          mano_obra: results.find((item) => item.tipo === 'mano_obra')?.list ?? [],
+        })
+      })
+      .catch(() => {
+        if (!active) return
+      })
+      .finally(() => {
+        if (active) setLoadingResourcesByTipo({ material: false, equipo: false, mano_obra: false })
+      })
+
     return () => {
       active = false
     }
@@ -442,17 +519,36 @@ function PartidasPanel({ token, onMessage }: PartidasPanelProps) {
     }
   }
 
-  async function handleUpdatePartida(id: string, cantidad: string, precio_unitario: string) {
+  async function handleOpenEditPartida(partida: BimPartidaRow, tipo: BimInsumoTipo) {
+    setLoadingEditInsumos(true)
+    try {
+      const r = await fetch(`${API_BASE_URL}/presupuestos/partidas/${partida.id}/materiales?tipo=${tipo}`, {
+        headers: bimHeaders,
+      })
+      if (!r.ok) throw new Error('No se pudieron cargar los insumos de la partida')
+      const insumos = await r.json() as BimPartidaMaterial[]
+      setEditingInsumos({
+        partida,
+        tipo,
+        insumos: Array.isArray(insumos) ? insumos : [],
+      })
+    } catch (e) {
+      onMessage({ tone: 'error', text: e instanceof Error ? e.message : 'Error al abrir la partida.' })
+    } finally {
+      setLoadingEditInsumos(false)
+    }
+  }
+
+  async function handleUpdatePartida(id: string, cantidad: string) {
     setSavingPartida(true)
     try {
       const r = await fetch(`${API_BASE_URL}/presupuestos/partidas/${id}`, {
         method: 'PATCH',
         headers: { ...bimHeaders, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cantidad, precio_unitario }),
+        body: JSON.stringify({ cantidad }),
       })
       if (!r.ok) throw new Error('No se pudo actualizar la partida')
-      await loadArbol()
-      setEditingPartida(null)
+      await reloadEditingPartidaMateriales(id)
       onMessage({ tone: 'success', text: 'Partida actualizada.' })
     } catch (e) {
       onMessage({ tone: 'error', text: e instanceof Error ? e.message : 'Error al actualizar partida.' })
@@ -475,6 +571,112 @@ function PartidasPanel({ token, onMessage }: PartidasPanelProps) {
       onMessage({ tone: 'error', text: e instanceof Error ? e.message : 'Error al eliminar partida.' })
     } finally {
       setDeletingPartidaId(null)
+    }
+  }
+
+  async function reloadEditingPartidaMateriales(partidaId: string) {
+    if (!selectedPresupuestoId) {
+      throw new Error('No hay presupuesto seleccionado')
+    }
+    if (!editingInsumos) {
+      throw new Error('No hay tipo de insumo en edición')
+    }
+    const [partidaRes, materialesRes] = await Promise.all([
+      fetch(`${API_BASE_URL}/presupuestos/${selectedPresupuestoId}/arbol`, { headers: bimHeaders }),
+      fetch(`${API_BASE_URL}/presupuestos/partidas/${partidaId}/materiales?tipo=${editingInsumos.tipo}`, { headers: bimHeaders }),
+    ])
+
+    if (!partidaRes.ok || !materialesRes.ok) {
+      throw new Error('No se pudo refrescar la partida editada')
+    }
+
+    const nextTree = await partidaRes.json() as PresupuestoArbol
+    const nextMateriales = await materialesRes.json() as BimPartidaMaterial[]
+    setArbol(nextTree)
+
+    let nextPartida: BimPartidaRow | null = null
+    for (const cap of nextTree.capitulos) {
+      const found = cap.partidas.find((item) => item.id === partidaId)
+      if (found) {
+        nextPartida = found
+        break
+      }
+    }
+
+    if (nextPartida) {
+      setEditingInsumos({
+        partida: nextPartida,
+        tipo: editingInsumos.tipo,
+        insumos: Array.isArray(nextMateriales) ? nextMateriales : [],
+      })
+    } else {
+      setEditingInsumos(null)
+    }
+  }
+
+  async function handleCreateMaterial(input: {
+    tipo: BimInsumoTipo
+    recurso_id: string
+    codigo: string
+    descripcion: string
+    unidad: string
+    cantidad: string
+    costo: string
+    desperdicio_pct: string
+  }) {
+    if (!editingInsumos) return
+    setSavingInsumoId('new')
+    try {
+      const r = await fetch(`${API_BASE_URL}/presupuestos/partidas/${editingInsumos.partida.id}/materiales`, {
+        method: 'POST',
+        headers: { ...bimHeaders, 'Content-Type': 'application/json' },
+        body: JSON.stringify(input),
+      })
+      if (!r.ok) throw new Error('No se pudo agregar el insumo')
+      await reloadEditingPartidaMateriales(editingInsumos.partida.id)
+      onMessage({ tone: 'success', text: 'Insumo agregado a la partida.' })
+    } catch (e) {
+      onMessage({ tone: 'error', text: e instanceof Error ? e.message : 'Error al agregar insumo.' })
+    } finally {
+      setSavingInsumoId(null)
+    }
+  }
+
+  async function handleUpdateMaterial(
+    id: string,
+    input: { cantidad: string; costo: string; desperdicio_pct: string },
+  ) {
+    setSavingInsumoId(id)
+    try {
+      const r = await fetch(`${API_BASE_URL}/presupuestos/partidas/materiales/${id}`, {
+        method: 'PATCH',
+        headers: { ...bimHeaders, 'Content-Type': 'application/json' },
+        body: JSON.stringify(input),
+      })
+      if (!r.ok) throw new Error('No se pudo actualizar el insumo')
+      if (editingInsumos) await reloadEditingPartidaMateriales(editingInsumos.partida.id)
+      onMessage({ tone: 'success', text: 'Insumo actualizado.' })
+    } catch (e) {
+      onMessage({ tone: 'error', text: e instanceof Error ? e.message : 'Error al actualizar insumo.' })
+    } finally {
+      setSavingInsumoId(null)
+    }
+  }
+
+  async function handleDeleteMaterial(id: string) {
+    setDeletingInsumoId(id)
+    try {
+      const r = await fetch(`${API_BASE_URL}/presupuestos/partidas/materiales/${id}`, {
+        method: 'DELETE',
+        headers: bimHeaders,
+      })
+      if (!r.ok) throw new Error('No se pudo eliminar el insumo')
+      if (editingInsumos) await reloadEditingPartidaMateriales(editingInsumos.partida.id)
+      onMessage({ tone: 'success', text: 'Insumo eliminado.' })
+    } catch (e) {
+      onMessage({ tone: 'error', text: e instanceof Error ? e.message : 'Error al eliminar insumo.' })
+    } finally {
+      setDeletingInsumoId(null)
     }
   }
 
@@ -655,14 +857,8 @@ function PartidasPanel({ token, onMessage }: PartidasPanelProps) {
                     selected={selectedCapituloId === cap.id}
                     onToggle={() => toggleCap(cap.id)}
                     onSelect={() => setSelectedCapituloId(cap.id)}
-                    editingPartidaId={editingPartida?.id ?? null}
-                    savingPartida={savingPartida}
                     deletingPartidaId={deletingPartidaId}
-                    onStartEdit={(p) =>
-                      setEditingPartida({ id: p.id, cantidad: p.cantidad, precio_unitario: p.precio_unitario })
-                    }
-                    onCancelEdit={() => setEditingPartida(null)}
-                    onSaveEdit={(id, cantidad, precio) => handleUpdatePartida(id, cantidad, precio)}
+                    onStartEdit={handleOpenEditPartida}
                     onDelete={(id) => handleDeletePartida(id)}
                   />
                 ))
@@ -1080,6 +1276,25 @@ function PartidasPanel({ token, onMessage }: PartidasPanelProps) {
           </div>
         </div>
       ) : null}
+
+      {editingInsumos ? (
+        <PartidaMaterialsModal
+          partida={editingInsumos.partida}
+          tipo={editingInsumos.tipo}
+          insumos={editingInsumos.insumos}
+          loading={loadingEditInsumos}
+          loadingMaterialResources={loadingResourcesByTipo[editingInsumos.tipo]}
+          materialResources={resourcesByTipo[editingInsumos.tipo]}
+          savingPartida={savingPartida}
+          savingMaterialId={savingInsumoId}
+          deletingMaterialId={deletingInsumoId}
+          onClose={() => setEditingInsumos(null)}
+          onSavePartida={handleUpdatePartida}
+          onCreateMaterial={handleCreateMaterial}
+          onUpdateMaterial={handleUpdateMaterial}
+          onDeleteMaterial={handleDeleteMaterial}
+        />
+      ) : null}
     </div>
   )
 }
@@ -1189,71 +1404,9 @@ type CapituloNodoProps = {
   selected: boolean
   onToggle: () => void
   onSelect: () => void
-  editingPartidaId: string | null
-  savingPartida: boolean
   deletingPartidaId: string | null
-  onStartEdit: (p: BimPartidaRow) => void
-  onCancelEdit: () => void
-  onSaveEdit: (id: string, cantidad: string, precio: string) => void
+  onStartEdit: (p: BimPartidaRow, tipo: BimInsumoTipo) => void
   onDelete: (id: string) => void
-}
-
-// Inner component that holds local edit-field state for a single partida row
-function PartidaEditRow({
-  p,
-  saving,
-  onSave,
-  onCancel,
-}: {
-  p: BimPartidaRow
-  saving: boolean
-  onSave: (id: string, cantidad: string, precio: string) => void
-  onCancel: () => void
-}) {
-  const [cantidad, setCantidad] = useState(p.cantidad)
-  const [precio, setPrecio] = useState(p.precio_unitario)
-
-  return (
-    <div className="flex items-center gap-2 border-b border-border/20 bg-primary/5 px-4 py-2 text-xs last:border-b-0">
-      <span className="w-20 shrink-0 font-mono text-muted-foreground">{p.codigo}</span>
-      <span className="min-w-0 flex-1 leading-4 text-foreground line-clamp-1">{p.descripcion}</span>
-      <input
-        type="number"
-        min="0"
-        step="0.01"
-        value={cantidad}
-        onChange={(e) => setCantidad(e.target.value)}
-        className="w-20 shrink-0 rounded border border-border/60 bg-background px-1.5 py-1 text-right text-xs tabular-nums focus:outline-none focus:ring-1 focus:ring-primary/50"
-        placeholder="Cant."
-      />
-      <input
-        type="number"
-        min="0"
-        step="0.0001"
-        value={precio}
-        onChange={(e) => setPrecio(e.target.value)}
-        className="w-24 shrink-0 rounded border border-border/60 bg-background px-1.5 py-1 text-right text-xs tabular-nums focus:outline-none focus:ring-1 focus:ring-primary/50"
-        placeholder="P.U."
-      />
-      <button
-        type="button"
-        disabled={saving}
-        onClick={() => onSave(p.id, cantidad, precio)}
-        className="shrink-0 rounded p-1 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 disabled:opacity-40"
-        title="Guardar"
-      >
-        {saving ? <LoaderCircle className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
-      </button>
-      <button
-        type="button"
-        onClick={onCancel}
-        className="shrink-0 rounded p-1 text-muted-foreground hover:bg-muted"
-        title="Cancelar"
-      >
-        <X className="size-3.5" />
-      </button>
-    </div>
-  )
 }
 
 function CapituloNodo({
@@ -1262,12 +1415,8 @@ function CapituloNodo({
   selected,
   onToggle,
   onSelect,
-  editingPartidaId,
-  savingPartida,
   deletingPartidaId,
   onStartEdit,
-  onCancelEdit,
-  onSaveEdit,
   onDelete,
 }: CapituloNodoProps) {
   const partidaCount = cap.partidas?.length ?? 0
@@ -1314,22 +1463,10 @@ function CapituloNodo({
         </Badge>
       </div>
 
-      {/* Partidas */}
+        {/* Partidas */}
       {expanded && partidaCount > 0 ? (
         <div className="border-t border-border/40 bg-muted/10">
           {cap.partidas.map((p) => {
-            if (editingPartidaId === p.id) {
-              return (
-                <PartidaEditRow
-                  key={p.id}
-                  p={p}
-                  saving={savingPartida}
-                  onSave={onSaveEdit}
-                  onCancel={onCancelEdit}
-                />
-              )
-            }
-
             const isDeleting = deletingPartidaId === p.id
             return (
               <div
@@ -1347,7 +1484,31 @@ function CapituloNodo({
                 </span>
                 <button
                   type="button"
-                  onClick={() => onStartEdit(p)}
+                  onClick={() => onStartEdit(p, 'material')}
+                  className="shrink-0 rounded px-1.5 py-0.5 text-[10px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  title="Ver materiales incluidos"
+                >
+                  MAT
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onStartEdit(p, 'equipo')}
+                  className="shrink-0 rounded px-1.5 py-0.5 text-[10px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  title="Ver equipos incluidos"
+                >
+                  EQ
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onStartEdit(p, 'mano_obra')}
+                  className="shrink-0 rounded px-1.5 py-0.5 text-[10px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  title="Ver mano de obra incluida"
+                >
+                  MO
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onStartEdit(p, 'material')}
                   className="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100"
                   title="Editar partida"
                 >
@@ -1377,6 +1538,311 @@ function CapituloNodo({
           Sin partidas. Selecciona una del catálogo y agrégala aquí.
         </div>
       ) : null}
+    </div>
+  )
+}
+
+function PartidaMaterialsModal({
+  partida,
+  tipo,
+  insumos,
+  loading,
+  loadingMaterialResources,
+  materialResources,
+  savingPartida,
+  savingMaterialId,
+  deletingMaterialId,
+  onClose,
+  onSavePartida,
+  onCreateMaterial,
+  onUpdateMaterial,
+  onDeleteMaterial,
+}: {
+  partida: BimPartidaRow
+  tipo: BimInsumoTipo
+  insumos: BimPartidaMaterial[]
+  loading: boolean
+  loadingMaterialResources: boolean
+  materialResources: BimMaterialRecurso[]
+  savingPartida: boolean
+  savingMaterialId: string | null
+  deletingMaterialId: string | null
+  onClose: () => void
+  onSavePartida: (id: string, cantidad: string) => Promise<void>
+  onCreateMaterial: (input: {
+    tipo: BimInsumoTipo
+    recurso_id: string
+    codigo: string
+    descripcion: string
+    unidad: string
+    cantidad: string
+    costo: string
+    desperdicio_pct: string
+  }) => Promise<void>
+  onUpdateMaterial: (id: string, input: { cantidad: string; costo: string; desperdicio_pct: string }) => Promise<void>
+  onDeleteMaterial: (id: string) => Promise<void>
+}) {
+  const [cantidad, setCantidad] = useState(partida.cantidad)
+  const [selectedRecursoId, setSelectedRecursoId] = useState('')
+  const [newMaterial, setNewMaterial] = useState({ cantidad: '1', costo: '0', desperdicio_pct: '0' })
+
+  useEffect(() => {
+    setCantidad(partida.cantidad)
+  }, [partida.id, partida.cantidad])
+
+  useEffect(() => {
+    const recurso = materialResources.find((item) => item.id === selectedRecursoId)
+    if (!recurso) return
+    setNewMaterial((current) => ({ ...current, costo: recurso.precio || current.costo }))
+  }, [selectedRecursoId, materialResources])
+
+  const selectedRecurso = materialResources.find((item) => item.id === selectedRecursoId) ?? null
+  const materiales = insumos
+  const totalMateriales = materiales.reduce((sum, item) => sum + Number(item.total), 0)
+  const tipoLabels: Record<BimInsumoTipo, { titulo: string; agregar: string; catalogo: string; vacio: string; total: string }> = {
+    material: {
+      titulo: 'Materiales incluidos',
+      agregar: 'Agregar material',
+      catalogo: 'Material del catalogo',
+      vacio: 'Esta partida no tiene materiales incluidos todavia.',
+      total: 'Total materiales',
+    },
+    equipo: {
+      titulo: 'Equipos incluidos',
+      agregar: 'Agregar equipo',
+      catalogo: 'Equipo del catalogo',
+      vacio: 'Esta partida no tiene equipos incluidos todavia.',
+      total: 'Total equipos',
+    },
+    mano_obra: {
+      titulo: 'Mano de obra incluida',
+      agregar: 'Agregar mano de obra',
+      catalogo: 'Recurso de mano de obra',
+      vacio: 'Esta partida no tiene mano de obra incluida todavia.',
+      total: 'Total mano de obra',
+    },
+  }
+  const labels = tipoLabels[tipo]
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative z-10 flex w-full max-w-6xl flex-col rounded-2xl border border-border/60 bg-background shadow-2xl" style={{ maxHeight: '92vh' }}>
+        <div className="flex shrink-0 items-start justify-between gap-4 border-b border-border/50 px-6 py-4">
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-mono text-sm font-bold text-primary">{partida.codigo}</span>
+              <span className="rounded-md bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">{partida.unidad}</span>
+            </div>
+            <p className="mt-1 text-sm font-medium leading-5 text-foreground">{partida.descripcion}</p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="shrink-0 rounded-lg p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+          >
+            <X className="size-5" />
+          </button>
+        </div>
+
+        <div className="grid min-h-0 flex-1 gap-0 lg:grid-cols-[minmax(0,4fr)_minmax(320px,3fr)]">
+          <div className="min-h-0 overflow-y-auto border-r border-border/40 px-6 py-4">
+            <div className="mb-4 grid gap-3 rounded-xl border border-border/50 bg-muted/20 p-4 md:grid-cols-[140px_160px_1fr]">
+              <div className="grid gap-1">
+                <Label className="text-xs">Cantidad partida</Label>
+                <Input type="number" min="0" step="0.01" value={cantidad} onChange={(e) => setCantidad(e.target.value)} className="h-8 text-sm" />
+              </div>
+              <div className="grid gap-1">
+                <Label className="text-xs">Precio unitario</Label>
+                <div className="flex h-8 items-center rounded-lg border border-border/60 bg-background px-3 text-sm font-semibold tabular-nums text-primary">
+                  {fmtNum(partida.precio_unitario, 4)}
+                </div>
+              </div>
+              <div className="grid gap-1">
+                <Label className="text-xs">Importe partida</Label>
+                <div className="flex h-8 items-center rounded-lg border border-border/60 bg-background px-3 text-sm font-semibold tabular-nums text-foreground">
+                  {fmtNum(partida.importe_total)}
+                </div>
+              </div>
+              <div className="md:col-span-3 flex justify-end">
+                <Button className="h-8 rounded-full px-4" disabled={savingPartida || !cantidad || Number(cantidad) < 0} onClick={() => onSavePartida(partida.id, cantidad)}>
+                  {savingPartida ? <LoaderCircle className="size-4 animate-spin" /> : <Check className="size-4" />}
+                  Guardar partida
+                </Button>
+              </div>
+            </div>
+
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div>
+                <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{labels.titulo}</h3>
+                <p className="mt-1 text-xs text-muted-foreground">El precio unitario de la partida se recalcula automaticamente con este detalle.</p>
+              </div>
+              <div className="rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
+                {labels.total}: {fmtNum(totalMateriales)}
+              </div>
+            </div>
+
+            {loading ? (
+              <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
+                <LoaderCircle className="size-4 animate-spin" />
+                Cargando materiales...
+              </div>
+            ) : materiales.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-border bg-muted/10 px-4 py-6 text-sm text-muted-foreground">
+                {labels.vacio}
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {materiales.map((material) => (
+                  <MaterialEditRow
+                    key={material.id}
+                    material={material}
+                    saving={savingMaterialId === material.id}
+                    deleting={deletingMaterialId === material.id}
+                    onSave={(input) => onUpdateMaterial(material.id, input)}
+                    onDelete={() => onDeleteMaterial(material.id)}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="min-h-0 overflow-y-auto px-6 py-4">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{labels.agregar}</h3>
+            <div className="mt-3 grid gap-3 rounded-xl border border-border/50 bg-muted/20 p-4">
+              <div className="grid gap-1">
+                <Label className="text-xs">{labels.catalogo}</Label>
+                <select
+                  value={selectedRecursoId}
+                  onChange={(e) => setSelectedRecursoId(e.target.value)}
+                  className="h-9 w-full rounded-xl border border-border/70 bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
+                >
+                  <option value="">Selecciona una opcion</option>
+                  {materialResources.map((recurso) => (
+                    <option key={recurso.id} value={recurso.id}>
+                      {recurso.codigo} · {recurso.descripcion}
+                    </option>
+                  ))}
+                </select>
+                {loadingMaterialResources ? <p className="text-xs text-muted-foreground">Cargando catalogo...</p> : null}
+              </div>
+
+              {selectedRecurso ? (
+                <div className="rounded-xl border border-border/50 bg-background/80 px-3 py-2 text-xs">
+                  <div className="font-mono text-primary">{selectedRecurso.codigo}</div>
+                  <div className="mt-1 text-foreground">{selectedRecurso.descripcion}</div>
+                  <div className="mt-1 text-muted-foreground">Unidad: {selectedRecurso.unidad} · Costo base: {fmtNum(selectedRecurso.precio, 4)}</div>
+                </div>
+              ) : null}
+
+              <div className="grid gap-3 sm:grid-cols-3">
+                <div className="grid gap-1">
+                  <Label className="text-xs">Cantidad</Label>
+                  <Input type="number" min="0" step="0.0001" value={newMaterial.cantidad} onChange={(e) => setNewMaterial((current) => ({ ...current, cantidad: e.target.value }))} className="h-8 text-sm" />
+                </div>
+                <div className="grid gap-1">
+                  <Label className="text-xs">Costo</Label>
+                  <Input type="number" min="0" step="0.0001" value={newMaterial.costo} onChange={(e) => setNewMaterial((current) => ({ ...current, costo: e.target.value }))} className="h-8 text-sm" />
+                </div>
+                <div className="grid gap-1">
+                  <Label className="text-xs">% Desperdicio</Label>
+                  <Input type="number" min="0" step="0.0001" value={newMaterial.desperdicio_pct} onChange={(e) => setNewMaterial((current) => ({ ...current, desperdicio_pct: e.target.value }))} className="h-8 text-sm" />
+                </div>
+              </div>
+
+              <div className="rounded-lg bg-background px-3 py-2 text-sm">
+                Total estimado:{' '}
+                <span className="font-semibold tabular-nums text-primary">
+                  {fmtNum((Number(newMaterial.cantidad) * Number(newMaterial.costo)) * (1 + (Number(newMaterial.desperdicio_pct) / 100)))}
+                </span>
+              </div>
+
+              <Button
+                className="h-9 rounded-full"
+                disabled={!selectedRecurso || savingMaterialId === 'new' || Number(newMaterial.cantidad) <= 0}
+                onClick={async () => {
+                    if (!selectedRecurso) return
+                  await onCreateMaterial({
+                    tipo,
+                    recurso_id: selectedRecurso.id,
+                    codigo: selectedRecurso.codigo,
+                    descripcion: selectedRecurso.descripcion,
+                    unidad: selectedRecurso.unidad,
+                    cantidad: newMaterial.cantidad,
+                    costo: newMaterial.costo,
+                    desperdicio_pct: newMaterial.desperdicio_pct,
+                  })
+                  setSelectedRecursoId('')
+                  setNewMaterial({ cantidad: '1', costo: '0', desperdicio_pct: '0' })
+                }}
+              >
+                {savingMaterialId === 'new' ? <LoaderCircle className="size-4 animate-spin" /> : <Plus className="size-4" />}
+                {labels.agregar}
+              </Button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function MaterialEditRow({
+  material,
+  saving,
+  deleting,
+  onSave,
+  onDelete,
+}: {
+  material: BimPartidaMaterial
+  saving: boolean
+  deleting: boolean
+  onSave: (input: { cantidad: string; costo: string; desperdicio_pct: string }) => Promise<void>
+  onDelete: () => Promise<void>
+}) {
+  const [cantidad, setCantidad] = useState(material.cantidad)
+  const [costo, setCosto] = useState(material.costo)
+  const [desperdicio, setDesperdicio] = useState(material.desperdicio_pct)
+
+  useEffect(() => {
+    setCantidad(material.cantidad)
+    setCosto(material.costo)
+    setDesperdicio(material.desperdicio_pct)
+  }, [material.id, material.cantidad, material.costo, material.desperdicio_pct])
+
+  const total = (Number(cantidad) * Number(costo)) * (1 + (Number(desperdicio) / 100))
+
+  return (
+    <div className="rounded-xl border border-border/50 bg-background/70 p-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="font-mono text-xs text-primary">{material.codigo}</div>
+          <div className="mt-1 text-sm text-foreground">{material.descripcion}</div>
+          <div className="mt-1 text-xs text-muted-foreground">Unidad: {material.unidad}</div>
+        </div>
+        <div className="text-right text-xs text-muted-foreground">
+          Total
+          <div className="text-sm font-semibold tabular-nums text-primary">{fmtNum(total)}</div>
+        </div>
+      </div>
+      <div className="mt-3 grid gap-3 md:grid-cols-[1fr_1fr_1fr_auto_auto]">
+        <Input type="number" min="0" step="0.0001" value={cantidad} onChange={(e) => setCantidad(e.target.value)} className="h-8 text-sm" />
+        <Input type="number" min="0" step="0.0001" value={costo} onChange={(e) => setCosto(e.target.value)} className="h-8 text-sm" />
+        <Input type="number" min="0" step="0.0001" value={desperdicio} onChange={(e) => setDesperdicio(e.target.value)} className="h-8 text-sm" />
+        <Button className="h-8 rounded-full px-3" disabled={saving} onClick={() => onSave({ cantidad, costo, desperdicio_pct: desperdicio })}>
+          {saving ? <LoaderCircle className="size-4 animate-spin" /> : <Check className="size-4" />}
+          Guardar
+        </Button>
+        <Button variant="outline" className="h-8 rounded-full px-3 text-destructive" disabled={deleting} onClick={() => void onDelete()}>
+          {deleting ? <LoaderCircle className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
+          Eliminar
+        </Button>
+      </div>
+      <div className="mt-2 grid gap-2 text-[10px] uppercase tracking-wide text-muted-foreground md:grid-cols-3">
+        <span>Cantidad</span>
+        <span>Costo</span>
+        <span>% Desperdicio</span>
+      </div>
     </div>
   )
 }
