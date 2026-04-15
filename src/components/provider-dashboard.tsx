@@ -46,7 +46,7 @@ import {
 import { Textarea } from '@/components/ui/textarea'
 import { API_BASE_URL, type AuthUser } from '@/lib/auth'
 import { ProjectsManagementPanel } from '@/components/projects-management-panel'
-import { PartidasPanel } from '@/components/partidas-panel'
+import { PartidasPanelWithBoundary } from '@/components/partidas-panel'
 
 type ProviderDashboardProps = {
   user: AuthUser
@@ -635,7 +635,7 @@ function ProviderDashboard({ user, token, onLogout }: ProviderDashboardProps) {
             ) : null}
 
             {!loading && activeSection === 'partidas' ? (
-              <PartidasPanel user={user} token={token} onMessage={setMessage} />
+              <PartidasPanelWithBoundary user={user} token={token} onMessage={setMessage} />
             ) : null}
 
             {!loading && activeSection === 'overview' ? (
