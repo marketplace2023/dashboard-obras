@@ -14,6 +14,7 @@ type ProjectsManagementPanelProps = {
   user: AuthUser
   token: string
   onMessage: (message: { tone: 'success' | 'error'; text: string } | null) => void
+  onOpenBudget?: (project: ProjectItem) => void
 }
 
 type ProjectItem = {
@@ -177,7 +178,7 @@ function mapProjectToForm(project: ProjectItem): ProjectFormState {
   }
 }
 
-function ProjectsManagementPanel({ user, token, onMessage }: ProjectsManagementPanelProps) {
+function ProjectsManagementPanel({ user, token, onMessage, onOpenBudget }: ProjectsManagementPanelProps) {
   const [loading, setLoading] = useState(true)
   const [savingProject, setSavingProject] = useState(false)
   const [projects, setProjects] = useState<ProjectItem[]>([])
@@ -288,7 +289,7 @@ function ProjectsManagementPanel({ user, token, onMessage }: ProjectsManagementP
         },
       }
 
-      await parseApiResponse(
+      const savedProject = await parseApiResponse<ProjectItem>(
         await fetch(`${API_BASE_URL}/obras${editingProjectId ? `/${editingProjectId}` : ''}`, {
           method: editingProjectId ? 'PATCH' : 'POST',
           headers: {
@@ -302,6 +303,9 @@ function ProjectsManagementPanel({ user, token, onMessage }: ProjectsManagementP
       await refreshProjects()
       resetProjectForm()
       onMessage({ tone: 'success', text: editingProjectId ? 'Proyecto actualizado correctamente.' : 'Proyecto creado correctamente.' })
+      if (!editingProjectId) {
+        onOpenBudget?.(savedProject)
+      }
     } catch (error) {
       onMessage({ tone: 'error', text: error instanceof Error ? error.message : 'No se pudo guardar el proyecto.' })
     } finally {
@@ -726,6 +730,9 @@ function ProjectsManagementPanel({ user, token, onMessage }: ProjectsManagementP
                       </div>
 
                       <div className="flex flex-wrap gap-2">
+                        <Button type="button" variant="secondary" className="rounded-full" onClick={() => onOpenBudget?.(project)}>
+                          Abrir APU
+                        </Button>
                         <Button type="button" variant="outline" className="rounded-full" onClick={() => handleEditProject(project)}>
                           <PencilLine className="size-4" />
                           Editar

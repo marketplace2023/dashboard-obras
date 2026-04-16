@@ -1,8 +1,6 @@
 import { Component, type ReactNode, useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Check,
-  ChevronDown,
-  ChevronRight,
   ListPlus,
   LoaderCircle,
   Pencil,
@@ -169,6 +167,7 @@ type PartidasPanelProps = {
   user: AuthUser
   token: string
   onMessage: (msg: MsgState) => void
+  initialObraId?: string
 }
 
 // ── Helpers ────────────────────────────────────────────────────────
@@ -190,7 +189,9 @@ function fmtNum(value: string | number, decimals = 2) {
 
 // ── Component ──────────────────────────────────────────────────────
 
-function PartidasPanel({ token, onMessage }: PartidasPanelProps) {
+const DEFAULT_CAPITULO = { codigo: '01', nombre: 'General' }
+
+function PartidasPanel({ token, onMessage, initialObraId }: PartidasPanelProps) {
   const bimHeaders = useMemo(
     () => ({ Authorization: `Bearer ${token}` }),
     [token],
@@ -198,7 +199,7 @@ function PartidasPanel({ token, onMessage }: PartidasPanelProps) {
 
   // ── Obras ─────────────────────────────────────────────────────
   const [obras, setObras] = useState<BimObra[]>([])
-  const [selectedObraId, setSelectedObraId] = useState('')
+  const [selectedObraId, setSelectedObraId] = useState(initialObraId ?? '')
   const [loadingObras, setLoadingObras] = useState(true)
 
   // ── Presupuestos ──────────────────────────────────────────────
@@ -212,13 +213,7 @@ function PartidasPanel({ token, onMessage }: PartidasPanelProps) {
   // ── Árbol ─────────────────────────────────────────────────────
   const [arbol, setArbol] = useState<PresupuestoArbol | null>(null)
   const [loadingArbol, setLoadingArbol] = useState(false)
-  const [expandedCaps, setExpandedCaps] = useState<Set<string>>(new Set())
   const [selectedCapituloId, setSelectedCapituloId] = useState('')
-
-  // ── Capítulo nuevo ────────────────────────────────────────────
-  const [showNewCap, setShowNewCap] = useState(false)
-  const [newCap, setNewCap] = useState({ codigo: '', nombre: '' })
-  const [addingCap, setAddingCap] = useState(false)
 
   // ── Catálogo APU ──────────────────────────────────────────────
   const [allApus, setAllApus] = useState<BimApu[]>([])
@@ -255,6 +250,10 @@ function PartidasPanel({ token, onMessage }: PartidasPanelProps) {
   })
 
   // ── Load obras ────────────────────────────────────────────────
+  useEffect(() => {
+    if (initialObraId) setSelectedObraId(initialObraId)
+  }, [initialObraId])
+
   useEffect(() => {
     let active = true
     setLoadingObras(true)
@@ -411,6 +410,17 @@ function PartidasPanel({ token, onMessage }: PartidasPanelProps) {
     return list.slice(0, 80)
   }, [allApus, searchText, selectedCategoria])
 
+  const partidasPlano = useMemo(() => {
+    if (!arbol) return [] as Array<BimPartidaRow & { capitulo_codigo: string; capitulo_nombre: string }>
+    return arbol.capitulos.flatMap((cap) =>
+      cap.partidas.map((partida) => ({
+        ...partida,
+        capitulo_codigo: cap.codigo,
+        capitulo_nombre: cap.nombre,
+      })),
+    )
+  }, [arbol])
+
   // ── Handlers ──────────────────────────────────────────────────
 
   async function handleCreatePresupuesto() {
@@ -436,30 +446,46 @@ function PartidasPanel({ token, onMessage }: PartidasPanelProps) {
     }
   }
 
-  async function handleAddChapter() {
-    if (!selectedPresupuestoId || !newCap.codigo.trim() || !newCap.nombre.trim()) return
-    setAddingCap(true)
+  async function ensureDefaultCapitulo(presupuestoId = selectedPresupuestoId, tree = arbol) {
+    if (!presupuestoId) throw new Error('No hay presupuesto seleccionado')
+    if (tree?.capitulos?.[0]) {
+      setSelectedCapituloId(tree.capitulos[0].id)
+      return tree.capitulos[0].id
+    }
+
     try {
-      const r = await fetch(`${API_BASE_URL}/presupuestos/${selectedPresupuestoId}/capitulos`, {
+      const r = await fetch(`${API_BASE_URL}/presupuestos/${presupuestoId}/capitulos`, {
         method: 'POST',
         headers: { ...bimHeaders, 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          codigo: newCap.codigo.trim(),
-          nombre: newCap.nombre.trim(),
-          orden: (arbol?.capitulos?.length ?? 0) + 1,
+          codigo: DEFAULT_CAPITULO.codigo,
+          nombre: DEFAULT_CAPITULO.nombre,
+          orden: 1,
         }),
       })
       if (!r.ok) throw new Error('No se pudo crear el capítulo')
+      const cap = await r.json() as BimCapituloNodo
+      setSelectedCapituloId(cap.id)
       await loadArbol()
-      setNewCap({ codigo: '', nombre: '' })
-      setShowNewCap(false)
-      onMessage({ tone: 'success', text: 'Capítulo agregado.' })
-    } catch (e) {
-      onMessage({ tone: 'error', text: e instanceof Error ? e.message : 'Error al agregar capítulo.' })
-    } finally {
-      setAddingCap(false)
+      return cap.id
+    } catch (error) {
+      throw error instanceof Error ? error : new Error('No se pudo preparar el presupuesto')
     }
   }
+
+  useEffect(() => {
+    if (!selectedPresupuestoId || loadingArbol || !arbol) return
+    if (arbol.capitulos[0]) {
+      if (selectedCapituloId !== arbol.capitulos[0].id) {
+        setSelectedCapituloId(arbol.capitulos[0].id)
+      }
+      return
+    }
+
+    void ensureDefaultCapitulo(selectedPresupuestoId, arbol).catch((error) => {
+      onMessage({ tone: 'error', text: error instanceof Error ? error.message : 'Error al preparar el presupuesto.' })
+    })
+  }, [selectedPresupuestoId, arbol, loadingArbol, selectedCapituloId, onMessage])
 
   function handleSelectApu(apu: BimApu) {
     setSelectedApu(apu)
@@ -487,11 +513,12 @@ function PartidasPanel({ token, onMessage }: PartidasPanelProps) {
   }
 
   async function handleAddPartida() {
-    if (!selectedCapituloId || !selectedApu) return
+    if (!selectedApu) return
     setAddingPartida(true)
     try {
+      const capituloId = selectedCapituloId || await ensureDefaultCapitulo()
       const precio = Number(precioOverride || selectedApu.precio_base)
-      const r = await fetch(`${API_BASE_URL}/presupuestos/capitulos/${selectedCapituloId}/partidas`, {
+      const r = await fetch(`${API_BASE_URL}/presupuestos/capitulos/${capituloId}/partidas`, {
         method: 'POST',
         headers: { ...bimHeaders, 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -506,8 +533,6 @@ function PartidasPanel({ token, onMessage }: PartidasPanelProps) {
       })
       if (!r.ok) throw new Error('No se pudo agregar la partida')
       await loadArbol()
-      // expand the chapter so user sees the new row
-      setExpandedCaps((prev) => new Set(prev).add(selectedCapituloId))
       setSelectedApu(null)
       setPrecioOverride('')
       setCantidad('1')
@@ -680,15 +705,6 @@ function PartidasPanel({ token, onMessage }: PartidasPanelProps) {
     }
   }
 
-  function toggleCap(id: string) {
-    setExpandedCaps((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-  }
-
   // ── Render ────────────────────────────────────────────────────
 
   return (
@@ -815,104 +831,117 @@ function PartidasPanel({ token, onMessage }: PartidasPanelProps) {
           </Card>
         ) : null}
 
-        {/* Paso 3: Árbol de capítulos */}
+        {/* Paso 3: Partidas del presupuesto */}
         {selectedPresupuestoId ? (
           <Card className="border-border/60 bg-card/90 shadow-sm">
             <CardHeader className="pb-3">
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <CardTitle className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-                    3 · Capítulos
-                  </CardTitle>
-                  {arbol ? (
-                    <p className="mt-0.5 text-xs text-muted-foreground">
-                      Total: {arbol.moneda}{' '}
-                      {fmtNum(arbol.total_presupuesto)}
-                    </p>
-                  ) : null}
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-7 rounded-full px-3 text-xs"
-                  onClick={() => setShowNewCap((v) => !v)}
-                >
-                  <Plus className="size-3" />
-                  Capítulo
-                </Button>
+              <div>
+                <CardTitle className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                  3 · Partidas del presupuesto
+                </CardTitle>
+                {arbol ? (
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    Total: {arbol.moneda} {fmtNum(arbol.total_presupuesto)}
+                  </p>
+                ) : null}
               </div>
             </CardHeader>
             <CardContent className="grid gap-2">
               {loadingArbol ? (
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <LoaderCircle className="size-4 animate-spin" />
-                  Cargando árbol...
+                  Cargando presupuesto...
                 </div>
-              ) : arbol && arbol.capitulos.length > 0 ? (
-                arbol.capitulos.map((cap) => (
-                  <CapituloNodo
-                    key={cap.id}
-                    cap={cap}
-                    expanded={expandedCaps.has(cap.id)}
-                    selected={selectedCapituloId === cap.id}
-                    onToggle={() => toggleCap(cap.id)}
-                    onSelect={() => setSelectedCapituloId(cap.id)}
-                    deletingPartidaId={deletingPartidaId}
-                    onStartEdit={handleOpenEditPartida}
-                    onDelete={(id) => handleDeletePartida(id)}
-                  />
-                ))
+              ) : partidasPlano.length > 0 ? (
+                <div className="grid gap-3">
+                  {partidasPlano.map((p) => {
+                    const isDeleting = deletingPartidaId === p.id
+                    return (
+                      <div
+                        key={p.id}
+                        className="group rounded-2xl border border-border/50 bg-background/70 p-4 shadow-sm transition-colors hover:bg-muted/10"
+                      >
+                        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="rounded-md bg-muted px-2 py-1 font-mono text-[11px] text-muted-foreground">
+                                {p.codigo}
+                              </span>
+                              <span className="rounded-md border border-border/60 px-2 py-1 text-[11px] text-muted-foreground">
+                                {p.unidad}
+                              </span>
+                            </div>
+                            <p className="mt-2 text-sm font-medium leading-5 text-foreground break-words">
+                              {p.descripcion}
+                            </p>
+                            <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                              <span className="rounded-full bg-muted px-2.5 py-1">
+                                Cantidad: <span className="font-semibold tabular-nums text-foreground">{fmtNum(p.cantidad, 2)}</span>
+                              </span>
+                              <span className="rounded-full bg-primary/10 px-2.5 py-1 text-primary">
+                                Total: <span className="font-semibold tabular-nums">{fmtNum(p.importe_total)}</span>
+                              </span>
+                              {arbol && arbol.capitulos.length > 1 ? (
+                                <span className="rounded-full bg-muted px-2.5 py-1">
+                                  {p.capitulo_codigo} · {p.capitulo_nombre}
+                                </span>
+                              ) : null}
+                            </div>
+                          </div>
+
+                          <div className="flex shrink-0 flex-wrap items-center gap-2 lg:max-w-[230px] lg:justify-end">
+                            <button
+                              type="button"
+                              onClick={() => handleOpenEditPartida(p, 'material')}
+                              className="rounded-full border border-border/60 px-2.5 py-1 text-[10px] font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                              title="Ver materiales incluidos"
+                            >
+                              MAT
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleOpenEditPartida(p, 'equipo')}
+                              className="rounded-full border border-border/60 px-2.5 py-1 text-[10px] font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                              title="Ver equipos incluidos"
+                            >
+                              EQ
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleOpenEditPartida(p, 'mano_obra')}
+                              className="rounded-full border border-border/60 px-2.5 py-1 text-[10px] font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                              title="Ver mano de obra incluida"
+                            >
+                              MO
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleOpenEditPartida(p, 'material')}
+                              className="rounded-full p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                              title="Editar partida"
+                            >
+                              <Pencil className="size-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              disabled={isDeleting}
+                              onClick={() => handleDeletePartida(p.id)}
+                              className="rounded-full p-2 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive disabled:opacity-40"
+                              title="Eliminar partida"
+                            >
+                              {isDeleting ? <LoaderCircle className="size-3.5 animate-spin" /> : <Trash2 className="size-3.5" />}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
               ) : (
                 <p className="text-sm text-muted-foreground">
-                  Sin capítulos aún. Agrega uno con el botón.
+                  Sin partidas aún. Selecciona una del catálogo y agrégala aquí.
                 </p>
               )}
-
-              {showNewCap ? (
-                <div className="mt-1 grid gap-2 rounded-xl border border-border/50 bg-muted/20 p-3">
-                  <div className="grid grid-cols-[90px_1fr] gap-2">
-                    <Input
-                      placeholder="Código"
-                      value={newCap.codigo}
-                      onChange={(e) => setNewCap((c) => ({ ...c, codigo: e.target.value }))}
-                      className="h-8 text-sm"
-                      autoFocus
-                    />
-                    <Input
-                      placeholder="Nombre del capítulo"
-                      value={newCap.nombre}
-                      onChange={(e) => setNewCap((c) => ({ ...c, nombre: e.target.value }))}
-                      className="h-8 text-sm"
-                    />
-                  </div>
-                  <div className="flex gap-2">
-                    <Button
-                      size="sm"
-                      className="h-7 rounded-full px-3 text-xs"
-                      onClick={handleAddChapter}
-                      disabled={addingCap || !newCap.codigo.trim() || !newCap.nombre.trim()}
-                    >
-                      {addingCap ? (
-                        <LoaderCircle className="size-3 animate-spin" />
-                      ) : (
-                        <Plus className="size-3" />
-                      )}
-                      Agregar
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 rounded-full px-3 text-xs"
-                      onClick={() => {
-                        setShowNewCap(false)
-                        setNewCap({ codigo: '', nombre: '' })
-                      }}
-                    >
-                      Cancelar
-                    </Button>
-                  </div>
-                </div>
-              ) : null}
             </CardContent>
           </Card>
         ) : null}
@@ -1041,12 +1070,12 @@ function PartidasPanel({ token, onMessage }: PartidasPanelProps) {
               <div className="flex items-start justify-between gap-2">
                 <div>
                   <CardTitle className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-                    Agregar al capítulo
+                    Agregar al presupuesto
                   </CardTitle>
                   <CardDescription className="text-xs">
-                    {selectedCapituloId
-                      ? `Capítulo seleccionado en el árbol izquierdo`
-                      : '← Selecciona un capítulo en el árbol izquierdo'}
+                    {selectedPresupuestoId
+                      ? 'Presupuesto activo listo para cargar partidas APU'
+                      : '← Selecciona un presupuesto primero'}
                   </CardDescription>
                 </div>
                 <button type="button" onClick={() => setSelectedApu(null)}>
@@ -1109,7 +1138,7 @@ function PartidasPanel({ token, onMessage }: PartidasPanelProps) {
                 className="h-9 rounded-full"
                 onClick={handleAddPartida}
                 disabled={
-                  !selectedCapituloId ||
+                  !selectedPresupuestoId ||
                   addingPartida ||
                   !cantidad ||
                   Number(cantidad) <= 0
@@ -1120,7 +1149,7 @@ function PartidasPanel({ token, onMessage }: PartidasPanelProps) {
                 ) : (
                   <ListPlus className="size-4" />
                 )}
-                {selectedCapituloId ? 'Agregar partida' : 'Selecciona un capítulo primero'}
+                {selectedPresupuestoId ? 'Agregar partida' : 'Selecciona un presupuesto primero'}
               </Button>
             </CardContent>
           </Card>
@@ -1206,9 +1235,9 @@ function PartidasPanel({ token, onMessage }: PartidasPanelProps) {
             {/* Agregar al capítulo — sticky footer */}
             <div className="shrink-0 border-t border-border/50 bg-muted/20 px-6 py-4">
               <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                Agregar al capítulo seleccionado
+                Agregar al presupuesto activo
               </h3>
-              {selectedCapituloId ? (
+              {selectedPresupuestoId ? (
                 <div className="grid gap-3">
                   <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
                     <div className="grid gap-1">
@@ -1269,7 +1298,7 @@ function PartidasPanel({ token, onMessage }: PartidasPanelProps) {
                 </div>
               ) : (
                 <p className="rounded-xl border border-dashed border-border bg-muted/10 px-4 py-3 text-xs text-muted-foreground">
-                  Selecciona un capítulo en el árbol izquierdo para poder agregar esta partida.
+                  Selecciona un presupuesto para poder agregar esta partida.
                 </p>
               )}
             </div>
@@ -1392,152 +1421,6 @@ function ApuDesglose({ descomposicion }: { descomposicion: BimDescomposicion[] }
           {fmtNum(totalGeneral)}
         </span>
       </div>
-    </div>
-  )
-}
-
-// ── Capitulo node ──────────────────────────────────────────────────
-
-type CapituloNodoProps = {
-  cap: BimCapituloNodo
-  expanded: boolean
-  selected: boolean
-  onToggle: () => void
-  onSelect: () => void
-  deletingPartidaId: string | null
-  onStartEdit: (p: BimPartidaRow, tipo: BimInsumoTipo) => void
-  onDelete: (id: string) => void
-}
-
-function CapituloNodo({
-  cap,
-  expanded,
-  selected,
-  onToggle,
-  onSelect,
-  deletingPartidaId,
-  onStartEdit,
-  onDelete,
-}: CapituloNodoProps) {
-  const partidaCount = cap.partidas?.length ?? 0
-
-  return (
-    <div
-      className={`overflow-hidden rounded-xl border transition-colors ${
-        selected ? 'border-primary/40 bg-primary/5' : 'border-border/50'
-      }`}
-    >
-      {/* Cabecera capítulo */}
-      <div className="flex items-center gap-2 px-3 py-2">
-        <button
-          type="button"
-          onClick={onToggle}
-          className="shrink-0 text-muted-foreground hover:text-foreground"
-          aria-label="Expandir"
-        >
-          {expanded ? (
-            <ChevronDown className="size-4" />
-          ) : (
-            <ChevronRight className="size-4" />
-          )}
-        </button>
-
-        <button
-          type="button"
-          onClick={onSelect}
-          className="min-w-0 flex-1 text-left"
-        >
-          <span className="font-mono text-xs text-muted-foreground">{cap.codigo}</span>
-          <span
-            className={`ml-2 text-sm ${selected ? 'font-semibold text-primary' : 'font-medium text-foreground'}`}
-          >
-            {cap.nombre}
-          </span>
-        </button>
-
-        <Badge
-          variant={selected ? 'default' : 'outline'}
-          className="shrink-0 rounded-full px-2 py-0 text-[10px]"
-        >
-          {partidaCount}
-        </Badge>
-      </div>
-
-        {/* Partidas */}
-      {expanded && partidaCount > 0 ? (
-        <div className="border-t border-border/40 bg-muted/10">
-          {cap.partidas.map((p) => {
-            const isDeleting = deletingPartidaId === p.id
-            return (
-              <div
-                key={p.id}
-                className="group flex items-start gap-2 border-b border-border/20 px-4 py-2 text-xs last:border-b-0 hover:bg-muted/20"
-              >
-                <span className="w-20 shrink-0 font-mono text-muted-foreground">{p.codigo}</span>
-                <span className="min-w-0 flex-1 leading-4 text-foreground line-clamp-1">
-                  {p.descripcion}
-                </span>
-                <span className="shrink-0 text-muted-foreground">{p.unidad}</span>
-                <span className="shrink-0 tabular-nums">{fmtNum(p.cantidad, 2)}</span>
-                <span className="shrink-0 font-semibold tabular-nums text-primary">
-                  {fmtNum(p.importe_total)}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => onStartEdit(p, 'material')}
-                  className="shrink-0 rounded px-1.5 py-0.5 text-[10px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                  title="Ver materiales incluidos"
-                >
-                  MAT
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onStartEdit(p, 'equipo')}
-                  className="shrink-0 rounded px-1.5 py-0.5 text-[10px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                  title="Ver equipos incluidos"
-                >
-                  EQ
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onStartEdit(p, 'mano_obra')}
-                  className="shrink-0 rounded px-1.5 py-0.5 text-[10px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                  title="Ver mano de obra incluida"
-                >
-                  MO
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onStartEdit(p, 'material')}
-                  className="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100"
-                  title="Editar partida"
-                >
-                  <Pencil className="size-3" />
-                </button>
-                <button
-                  type="button"
-                  disabled={isDeleting}
-                  onClick={() => onDelete(p.id)}
-                  className="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100 disabled:opacity-40"
-                  title="Eliminar partida"
-                >
-                  {isDeleting ? (
-                    <LoaderCircle className="size-3 animate-spin" />
-                  ) : (
-                    <Trash2 className="size-3" />
-                  )}
-                </button>
-              </div>
-            )
-          })}
-        </div>
-      ) : null}
-
-      {expanded && partidaCount === 0 ? (
-        <div className="border-t border-border/30 px-4 py-3 text-xs text-muted-foreground">
-          Sin partidas. Selecciona una del catálogo y agrégala aquí.
-        </div>
-      ) : null}
     </div>
   )
 }

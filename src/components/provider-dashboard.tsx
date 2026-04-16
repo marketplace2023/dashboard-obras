@@ -204,6 +204,7 @@ function toBoolean(value: unknown) {
 function ProviderDashboard({ user, token, onLogout }: ProviderDashboardProps) {
   const [activeSection, setActiveSection] = useState<DashboardSection>('overview')
   const [obrasOpen, setObrasOpen] = useState(false)
+  const [selectedObraFromProjects, setSelectedObraFromProjects] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [savingProfile, setSavingProfile] = useState(false)
   const [creatingProduct, setCreatingProduct] = useState(false)
@@ -503,6 +504,13 @@ function ProviderDashboard({ user, token, onLogout }: ProviderDashboardProps) {
     }
   }
 
+  function handleOpenProjectBudget(project: { id: string; nombre: string }) {
+    setSelectedObraFromProjects(project.id)
+    setObrasOpen(true)
+    setActiveSection('partidas')
+    setMessage({ tone: 'success', text: `Proyecto ${project.nombre} listo para cargar presupuesto con APU.` })
+  }
+
   return (
     <SidebarProvider>
       <div className="flex min-h-screen bg-background text-foreground">
@@ -631,11 +639,11 @@ function ProviderDashboard({ user, token, onLogout }: ProviderDashboardProps) {
             ) : null}
 
             {!loading && activeSection === 'projects' ? (
-              <ProjectsManagementPanel user={user} token={token} onMessage={setMessage} />
+              <ProjectsManagementPanel user={user} token={token} onMessage={setMessage} onOpenBudget={handleOpenProjectBudget} />
             ) : null}
 
             {!loading && activeSection === 'partidas' ? (
-              <PartidasPanelWithBoundary user={user} token={token} onMessage={setMessage} />
+              <PartidasPanelWithBoundary user={user} token={token} onMessage={setMessage} initialObraId={selectedObraFromProjects ?? undefined} />
             ) : null}
 
             {!loading && activeSection === 'overview' ? (
