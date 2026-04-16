@@ -47,6 +47,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { API_BASE_URL, type AuthUser } from '@/lib/auth'
 import { ProjectsManagementPanel } from '@/components/projects-management-panel'
 import { PartidasPanelWithBoundary } from '@/components/partidas-panel'
+import { MaestrosPanel } from '@/components/maestros-panel'
 
 type ProviderDashboardProps = {
   user: AuthUser
@@ -54,7 +55,16 @@ type ProviderDashboardProps = {
   onLogout: () => void
 }
 
-type DashboardSection = 'overview' | 'projects' | 'partidas' | 'profile' | 'catalog'
+type DashboardSection =
+  | 'overview'
+  | 'projects'
+  | 'partidas'
+  | 'profile'
+  | 'catalog'
+  | 'master-materiales'
+  | 'master-equipos'
+  | 'master-mano-obra'
+  | 'master-partidas'
 
 type StoreResponse = {
   id: string
@@ -203,6 +213,7 @@ function toBoolean(value: unknown) {
 
 function ProviderDashboard({ user, token, onLogout }: ProviderDashboardProps) {
   const [activeSection, setActiveSection] = useState<DashboardSection>('overview')
+  const [maestrosOpen, setMaestrosOpen] = useState(true)
   const [obrasOpen, setObrasOpen] = useState(false)
   const [selectedObraFromProjects, setSelectedObraFromProjects] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -513,7 +524,7 @@ function ProviderDashboard({ user, token, onLogout }: ProviderDashboardProps) {
 
   return (
     <SidebarProvider>
-      <div className="flex min-h-screen bg-background text-foreground">
+      <div className="flex h-screen overflow-hidden bg-background text-foreground">
         <Sidebar>
           <SidebarHeader>
             <div className="flex items-center gap-3">
@@ -532,6 +543,61 @@ function ProviderDashboard({ user, token, onLogout }: ProviderDashboardProps) {
               <SidebarGroupLabel>Navegacion</SidebarGroupLabel>
             <SidebarMenu>
                 {/* Gestión de obras — con submenu */}
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    isActive={
+                      activeSection === 'master-materiales' ||
+                      activeSection === 'master-equipos' ||
+                      activeSection === 'master-mano-obra' ||
+                      activeSection === 'master-partidas'
+                    }
+                    onClick={() => setMaestrosOpen((open) => !open)}
+                  >
+                    <Blocks className="size-4" />
+                    <span className="flex-1">Maestros</span>
+                    <ChevronDown
+                      className={`size-4 transition-transform duration-200 ${maestrosOpen ? 'rotate-180' : ''}`}
+                    />
+                  </SidebarMenuButton>
+
+                  {maestrosOpen ? (
+                    <SidebarMenuSub>
+                      <SidebarMenuSubItem>
+                        <SidebarMenuSubButton
+                          isActive={activeSection === 'master-materiales'}
+                          onClick={() => setActiveSection('master-materiales')}
+                        >
+                          Materiales
+                        </SidebarMenuSubButton>
+                      </SidebarMenuSubItem>
+                      <SidebarMenuSubItem>
+                        <SidebarMenuSubButton
+                          isActive={activeSection === 'master-equipos'}
+                          onClick={() => setActiveSection('master-equipos')}
+                        >
+                          Equipos
+                        </SidebarMenuSubButton>
+                      </SidebarMenuSubItem>
+                      <SidebarMenuSubItem>
+                        <SidebarMenuSubButton
+                          isActive={activeSection === 'master-mano-obra'}
+                          onClick={() => setActiveSection('master-mano-obra')}
+                        >
+                          Mano de Obra
+                        </SidebarMenuSubButton>
+                      </SidebarMenuSubItem>
+                      <SidebarMenuSubItem>
+                        <SidebarMenuSubButton
+                          isActive={activeSection === 'master-partidas'}
+                          onClick={() => setActiveSection('master-partidas')}
+                        >
+                          Partidas
+                        </SidebarMenuSubButton>
+                      </SidebarMenuSubItem>
+                    </SidebarMenuSub>
+                  ) : null}
+                </SidebarMenuItem>
+
                 <SidebarMenuItem>
                   <SidebarMenuButton
                     isActive={activeSection === 'projects' || activeSection === 'partidas'}
@@ -603,8 +669,8 @@ function ProviderDashboard({ user, token, onLogout }: ProviderDashboardProps) {
           </SidebarFooter>
         </Sidebar>
 
-        <SidebarInset className="min-w-0">
-          <div className="border-b border-border/70 bg-background/80 px-4 py-4 backdrop-blur sm:px-6 lg:px-8">
+        <SidebarInset>
+          <div className="shrink-0 border-b border-border/70 bg-background/80 px-4 py-4 backdrop-blur sm:px-6 lg:px-8">
             <div className="flex items-center justify-between gap-4">
               <div className="flex items-center gap-3">
                 <SidebarTrigger />
@@ -622,7 +688,8 @@ function ProviderDashboard({ user, token, onLogout }: ProviderDashboardProps) {
             </div>
           </div>
 
-          <div className="mx-auto grid max-w-[1500px] gap-8 px-4 py-6 sm:px-6 lg:px-8 xl:px-10 2xl:px-12">
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            <div className="mx-auto grid max-w-[1500px] gap-8 px-4 py-6 sm:px-6 lg:px-8 xl:px-10 2xl:px-12">
             {message ? (
               <div className={`rounded-2xl border px-4 py-3 text-sm ${message.tone === 'error' ? 'border-destructive/20 bg-destructive/10 text-destructive' : 'border-primary/20 bg-primary/10 text-foreground'}`}>
                 {message.text}
@@ -644,6 +711,28 @@ function ProviderDashboard({ user, token, onLogout }: ProviderDashboardProps) {
 
             {!loading && activeSection === 'partidas' ? (
               <PartidasPanelWithBoundary user={user} token={token} onMessage={setMessage} initialObraId={selectedObraFromProjects ?? undefined} />
+            ) : null}
+
+            {!loading && (
+              activeSection === 'master-materiales' ||
+              activeSection === 'master-equipos' ||
+              activeSection === 'master-mano-obra' ||
+              activeSection === 'master-partidas'
+            ) ? (
+              <MaestrosPanel
+                user={user}
+                token={token}
+                onMessage={setMessage}
+                initialSection={
+                  activeSection === 'master-materiales'
+                    ? 'materiales'
+                    : activeSection === 'master-equipos'
+                      ? 'equipos'
+                      : activeSection === 'master-mano-obra'
+                        ? 'mano_obra'
+                        : 'partidas'
+                }
+              />
             ) : null}
 
             {!loading && activeSection === 'overview' ? (
@@ -1011,6 +1100,7 @@ function ProviderDashboard({ user, token, onLogout }: ProviderDashboardProps) {
                 </Card>
               </div>
             ) : null}
+            </div>
           </div>
         </SidebarInset>
       </div>

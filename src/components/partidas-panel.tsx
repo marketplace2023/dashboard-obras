@@ -1,6 +1,7 @@
 import { Component, type ReactNode, useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Check,
+  FileDown,
   ListPlus,
   LoaderCircle,
   Pencil,
@@ -209,6 +210,7 @@ function PartidasPanel({ token, onMessage, initialObraId }: PartidasPanelProps) 
   const [showNewPres, setShowNewPres] = useState(false)
   const [newPresNombre, setNewPresNombre] = useState('')
   const [creatingPres, setCreatingPres] = useState(false)
+  const [printingPdf, setPrintingPdf] = useState(false)
 
   // ── Árbol ─────────────────────────────────────────────────────
   const [arbol, setArbol] = useState<PresupuestoArbol | null>(null)
@@ -443,6 +445,30 @@ function PartidasPanel({ token, onMessage, initialObraId }: PartidasPanelProps) 
       onMessage({ tone: 'error', text: e instanceof Error ? e.message : 'Error al crear presupuesto.' })
     } finally {
       setCreatingPres(false)
+    }
+  }
+
+  async function handlePrintPresupuesto() {
+    if (!selectedPresupuestoId || !selectedObraId) return
+    setPrintingPdf(true)
+    onMessage(null)
+    try {
+      const r = await fetch(
+        `${API_BASE_URL}/reportes/pdf?type=presupuesto&obraId=${selectedObraId}&presupuestoId=${selectedPresupuestoId}`,
+        {
+        headers: bimHeaders,
+        },
+      )
+      if (!r.ok) throw new Error('No se pudo generar el reporte PDF del presupuesto')
+      const blob = await r.blob()
+      const url = URL.createObjectURL(blob)
+      window.open(url, '_blank', 'noopener,noreferrer')
+      setTimeout(() => URL.revokeObjectURL(url), 60_000)
+      onMessage(null)
+    } catch (e) {
+      onMessage({ tone: 'error', text: e instanceof Error ? e.message : 'Error al imprimir el presupuesto.' })
+    } finally {
+      setPrintingPdf(false)
     }
   }
 
@@ -755,15 +781,29 @@ function PartidasPanel({ token, onMessage, initialObraId }: PartidasPanelProps) 
                 <CardTitle className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
                   2 · Presupuesto
                 </CardTitle>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-7 rounded-full px-3 text-xs"
-                  onClick={() => setShowNewPres((v) => !v)}
-                >
-                  <Plus className="size-3" />
-                  Nuevo
-                </Button>
+                <div className="flex items-center gap-2">
+                  {selectedPresupuestoId ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 rounded-full px-3 text-xs"
+                      onClick={handlePrintPresupuesto}
+                      disabled={printingPdf}
+                    >
+                      {printingPdf ? <LoaderCircle className="size-3 animate-spin" /> : <FileDown className="size-3" />}
+                      Imprimir PDF
+                    </Button>
+                  ) : null}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 rounded-full px-3 text-xs"
+                    onClick={() => setShowNewPres((v) => !v)}
+                  >
+                    <Plus className="size-3" />
+                    Nuevo
+                  </Button>
+                </div>
               </div>
             </CardHeader>
             <CardContent className="grid gap-3">

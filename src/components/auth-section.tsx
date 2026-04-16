@@ -67,6 +67,8 @@ async function parseApiResponse(response: Response) {
 
 function AuthSection({ activeTab, onTabChange, user, authReady, onAuthSuccess, onLogout }: AuthSectionProps) {
   const [loginForm, setLoginForm] = useState({ email: '', password: '' })
+  const [forgotForm, setForgotForm] = useState({ email: '' })
+  const [resetForm, setResetForm] = useState({ password: '', confirmPassword: '' })
   const [registerForm, setRegisterForm] = useState({
     name: '',
     username: '',
@@ -79,7 +81,11 @@ function AuthSection({ activeTab, onTabChange, user, authReady, onAuthSuccess, o
     entity_type: 'contractor',
   })
   const [submittingTab, setSubmittingTab] = useState<AuthTab | null>(null)
+  const [sendingResetEmail, setSendingResetEmail] = useState(false)
+  const [resettingPassword, setResettingPassword] = useState(false)
+  const [showForgotPassword, setShowForgotPassword] = useState(false)
   const [message, setMessage] = useState<MessageState>(null)
+  const resetToken = useMemo(() => new URLSearchParams(window.location.search).get('token') ?? '', [])
 
   const sessionRoleLabel = useMemo(() => {
     if (!user) return ''
@@ -141,6 +147,69 @@ function AuthSection({ activeTab, onTabChange, user, authReady, onAuthSuccess, o
       setMessage({ tone: 'error', text: error instanceof Error ? error.message : 'No se pudo crear la cuenta.' })
     } finally {
       setSubmittingTab(null)
+    }
+  }
+
+  async function handleForgotPasswordSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setSendingResetEmail(true)
+    setMessage(null)
+
+    try {
+      const payload = await parseApiResponse(
+        await fetch(`${API_BASE_URL}/auth/forgot-password`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: forgotForm.email }),
+        }),
+      ) as { message?: string }
+
+      setMessage({ tone: 'success', text: payload.message || 'Revisa tu correo para continuar.' })
+      setShowForgotPassword(false)
+    } catch (error) {
+      setMessage({ tone: 'error', text: error instanceof Error ? error.message : 'No se pudo enviar el correo de recuperacion.' })
+    } finally {
+      setSendingResetEmail(false)
+    }
+  }
+
+  async function handleResetPasswordSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+
+    if (!resetToken) {
+      setMessage({ tone: 'error', text: 'No se encontro un token de recuperacion valido.' })
+      return
+    }
+
+    if (resetForm.password.length < 8) {
+      setMessage({ tone: 'error', text: 'La contrasena debe tener al menos 8 caracteres.' })
+      return
+    }
+
+    if (resetForm.password !== resetForm.confirmPassword) {
+      setMessage({ tone: 'error', text: 'Las contrasenas no coinciden.' })
+      return
+    }
+
+    setResettingPassword(true)
+    setMessage(null)
+
+    try {
+      const payload = await parseApiResponse(
+        await fetch(`${API_BASE_URL}/auth/reset-password`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token: resetToken, password: resetForm.password }),
+        }),
+      ) as { message?: string }
+
+      setMessage({ tone: 'success', text: payload.message || 'Contrasena actualizada correctamente.' })
+      setResetForm({ password: '', confirmPassword: '' })
+      window.history.replaceState({}, '', window.location.pathname)
+    } catch (error) {
+      setMessage({ tone: 'error', text: error instanceof Error ? error.message : 'No se pudo restablecer la contrasena.' })
+    } finally {
+      setResettingPassword(false)
     }
   }
 
@@ -251,7 +320,45 @@ function AuthSection({ activeTab, onTabChange, user, authReady, onAuthSuccess, o
                 </div>
               </div>
             ) : (
-              <Tabs value={activeTab} onValueChange={(value) => onTabChange(value as AuthTab)}>
+              resetToken ? (
+                <form className="grid gap-4" onSubmit={handleResetPasswordSubmit}>
+                  <div className="space-y-1">
+                    <p className="text-lg font-semibold">Restablecer contrasena</p>
+                    <p className="text-sm text-muted-foreground">
+                      Ingresa tu nueva contrasena para recuperar el acceso.
+                    </p>
+                  </div>
+
+                  <div className="grid gap-2">
+                    <Label htmlFor="reset-password">Nueva contrasena</Label>
+                    <Input
+                      id="reset-password"
+                      type="password"
+                      placeholder="Minimo 8 caracteres"
+                      value={resetForm.password}
+                      onChange={(event) => setResetForm((current) => ({ ...current, password: event.target.value }))}
+                      required
+                    />
+                  </div>
+
+                  <div className="grid gap-2">
+                    <Label htmlFor="reset-confirm-password">Confirmar contrasena</Label>
+                    <Input
+                      id="reset-confirm-password"
+                      type="password"
+                      placeholder="Repite la contrasena"
+                      value={resetForm.confirmPassword}
+                      onChange={(event) => setResetForm((current) => ({ ...current, confirmPassword: event.target.value }))}
+                      required
+                    />
+                  </div>
+
+                  <Button type="submit" className="mt-2 h-11 rounded-full" disabled={resettingPassword}>
+                    {resettingPassword ? <LoaderCircle className="size-4 animate-spin" /> : null}
+                    Guardar nueva contrasena
+                  </Button>
+                </form>
+              ) : <Tabs value={activeTab} onValueChange={(value) => onTabChange(value as AuthTab)}>
                 <TabsList className="grid w-full grid-cols-2 rounded-2xl">
                   <TabsTrigger value="login" className="rounded-xl">
                     Login
@@ -262,40 +369,83 @@ function AuthSection({ activeTab, onTabChange, user, authReady, onAuthSuccess, o
                 </TabsList>
 
                 <TabsContent value="login">
-                  <form className="grid gap-4" onSubmit={handleLoginSubmit}>
-                    <div className="grid gap-2">
-                      <Label htmlFor="login-email">Correo</Label>
-                      <Input
-                        id="login-email"
-                        type="email"
-                        placeholder="correo@empresa.com"
-                        value={loginForm.email}
-                        onChange={(event) => setLoginForm((current) => ({ ...current, email: event.target.value }))}
-                        required
-                      />
-                    </div>
+                  {showForgotPassword ? (
+                    <form className="grid gap-4" onSubmit={handleForgotPasswordSubmit}>
+                      <div className="space-y-1">
+                        <p className="text-base font-semibold">Recuperar contrasena</p>
+                        <p className="text-sm text-muted-foreground">
+                          Te enviaremos un enlace para restablecer tu acceso.
+                        </p>
+                      </div>
 
-                    <div className="grid gap-2">
-                      <Label htmlFor="login-password">Contrasena</Label>
-                      <Input
-                        id="login-password"
-                        type="password"
-                        placeholder="********"
-                        value={loginForm.password}
-                        onChange={(event) => setLoginForm((current) => ({ ...current, password: event.target.value }))}
-                        required
-                      />
-                    </div>
+                      <div className="grid gap-2">
+                        <Label htmlFor="forgot-email">Correo</Label>
+                        <Input
+                          id="forgot-email"
+                          type="email"
+                          placeholder="correo@empresa.com"
+                          value={forgotForm.email}
+                          onChange={(event) => setForgotForm({ email: event.target.value })}
+                          required
+                        />
+                      </div>
 
-                    <Button type="submit" className="mt-2 h-11 rounded-full" disabled={submittingTab === 'login'}>
-                      {submittingTab === 'login' ? <LoaderCircle className="size-4 animate-spin" /> : null}
-                      Iniciar sesion
-                    </Button>
+                      <div className="flex flex-col gap-2 sm:flex-row">
+                        <Button type="submit" className="h-11 rounded-full" disabled={sendingResetEmail}>
+                          {sendingResetEmail ? <LoaderCircle className="size-4 animate-spin" /> : null}
+                          Enviar enlace
+                        </Button>
+                        <Button type="button" variant="outline" className="h-11 rounded-full" onClick={() => setShowForgotPassword(false)}>
+                          Volver al login
+                        </Button>
+                      </div>
+                    </form>
+                  ) : (
+                    <form className="grid gap-4" onSubmit={handleLoginSubmit}>
+                      <div className="grid gap-2">
+                        <Label htmlFor="login-email">Correo</Label>
+                        <Input
+                          id="login-email"
+                          type="email"
+                          placeholder="correo@empresa.com"
+                          value={loginForm.email}
+                          onChange={(event) => setLoginForm((current) => ({ ...current, email: event.target.value }))}
+                          required
+                        />
+                      </div>
 
-                    <p className="text-sm text-muted-foreground">
-                      Si aun no tienes cuenta, cambia a la pestana de registro y crea tu acceso.
-                    </p>
-                  </form>
+                      <div className="grid gap-2">
+                        <Label htmlFor="login-password">Contrasena</Label>
+                        <Input
+                          id="login-password"
+                          type="password"
+                          placeholder="********"
+                          value={loginForm.password}
+                          onChange={(event) => setLoginForm((current) => ({ ...current, password: event.target.value }))}
+                          required
+                        />
+                      </div>
+
+                      <div className="flex items-center justify-between gap-3 text-sm">
+                        <span className="text-muted-foreground">Si no recuerdas tu clave, puedes recuperarla.</span>
+                        <button type="button" className="font-medium text-primary hover:underline" onClick={() => {
+                          setForgotForm({ email: loginForm.email })
+                          setShowForgotPassword(true)
+                        }}>
+                          Olvide mi contrasena
+                        </button>
+                      </div>
+
+                      <Button type="submit" className="mt-2 h-11 rounded-full" disabled={submittingTab === 'login'}>
+                        {submittingTab === 'login' ? <LoaderCircle className="size-4 animate-spin" /> : null}
+                        Iniciar sesion
+                      </Button>
+
+                      <p className="text-sm text-muted-foreground">
+                        Si aun no tienes cuenta, cambia a la pestana de registro y crea tu acceso.
+                      </p>
+                    </form>
+                  )}
                 </TabsContent>
 
                 <TabsContent value="register">

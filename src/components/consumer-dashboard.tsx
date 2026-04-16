@@ -103,7 +103,7 @@ function ConsumerDashboard({ user, token, onLogout }: ConsumerDashboardProps) {
 
   return (
     <SidebarProvider>
-      <div className="flex min-h-screen bg-background text-foreground">
+      <div className="flex h-screen overflow-hidden bg-background text-foreground">
         <Sidebar>
           <SidebarHeader>
             <div className="flex items-center gap-3">
@@ -146,7 +146,7 @@ function ConsumerDashboard({ user, token, onLogout }: ConsumerDashboardProps) {
         </Sidebar>
 
         <SidebarInset>
-          <div className="border-b border-border/70 bg-background/80 px-4 py-4 backdrop-blur sm:px-6 lg:px-8">
+          <div className="shrink-0 border-b border-border/70 bg-background/80 px-4 py-4 backdrop-blur sm:px-6 lg:px-8">
             <div className="flex items-center justify-between gap-4">
               <div className="flex items-center gap-3">
                 <SidebarTrigger />
@@ -159,23 +159,24 @@ function ConsumerDashboard({ user, token, onLogout }: ConsumerDashboardProps) {
             </div>
           </div>
 
-          <div className="mx-auto grid max-w-7xl gap-6 px-4 py-6 sm:px-6 lg:px-8">
-            {message ? (
-              <div className={`rounded-2xl border px-4 py-3 text-sm ${message.tone === 'error' ? 'border-destructive/20 bg-destructive/10 text-destructive' : 'border-primary/20 bg-primary/10 text-foreground'}`}>
-                {message.text}
-              </div>
-            ) : null}
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            <div className="mx-auto grid max-w-7xl gap-6 px-4 py-6 sm:px-6 lg:px-8">
+              {message ? (
+                <div className={`rounded-2xl border px-4 py-3 text-sm ${message.tone === 'error' ? 'border-destructive/20 bg-destructive/10 text-destructive' : 'border-primary/20 bg-primary/10 text-foreground'}`}>
+                  {message.text}
+                </div>
+              ) : null}
 
-            {loading ? (
-              <Card className="border-border/60 bg-card/90 shadow-sm">
-                <CardContent className="flex min-h-[260px] items-center justify-center gap-3 p-6 text-muted-foreground">
-                  <LoaderCircle className="size-5 animate-spin" />
-                  Cargando panel consumidor...
-                </CardContent>
-              </Card>
-            ) : null}
+              {loading ? (
+                <Card className="border-border/60 bg-card/90 shadow-sm">
+                  <CardContent className="flex min-h-[260px] items-center justify-center gap-3 p-6 text-muted-foreground">
+                    <LoaderCircle className="size-5 animate-spin" />
+                    Cargando panel consumidor...
+                  </CardContent>
+                </Card>
+              ) : null}
 
-            {!loading && activeSection === 'overview' ? (
+              {!loading && activeSection === 'overview' ? (
               <div className="grid gap-4 md:grid-cols-3">
                 {[
                   { label: 'Solicitudes activas', value: String(intents.length), icon: ShoppingCart },
@@ -198,9 +199,9 @@ function ConsumerDashboard({ user, token, onLogout }: ConsumerDashboardProps) {
                   )
                 })}
               </div>
-            ) : null}
+              ) : null}
 
-            {!loading && activeSection === 'intents' ? (
+              {!loading && activeSection === 'intents' ? (
               <Card className="border-border/60 bg-card/90 shadow-sm">
                 <CardHeader>
                   <CardTitle>Mis solicitudes</CardTitle>
@@ -225,9 +226,9 @@ function ConsumerDashboard({ user, token, onLogout }: ConsumerDashboardProps) {
                   )}
                 </CardContent>
               </Card>
-            ) : null}
+              ) : null}
 
-            {!loading && activeSection === 'orders' ? (
+              {!loading && activeSection === 'orders' ? (
               <Card className="border-border/60 bg-card/90 shadow-sm">
                 <CardHeader>
                   <CardTitle>Mis ordenes</CardTitle>
@@ -252,7 +253,8 @@ function ConsumerDashboard({ user, token, onLogout }: ConsumerDashboardProps) {
                   )}
                 </CardContent>
               </Card>
-            ) : null}
+              ) : null}
+            </div>
           </div>
         </SidebarInset>
       </div>

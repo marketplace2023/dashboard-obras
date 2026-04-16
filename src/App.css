@@ -156,3 +156,68 @@
 .hero-banner-swiper .swiper-pagination-bullet-active {
   background: rgba(255, 255, 255, 0.98);
 }
+
+.maestros-print-root {
+  display: none;
+}
+
+@media print {
+  body.printing-maestros #root > * {
+    display: none !important;
+  }
+
+  body.printing-maestros .maestros-print-root {
+    display: block !important;
+    padding: 18px;
+    color: #1f2937;
+    background: #fff;
+  }
+
+  body.printing-maestros .maestros-print-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: end;
+    gap: 24px;
+    margin-bottom: 18px;
+    border-bottom: 2px solid #e5e7eb;
+    padding-bottom: 12px;
+  }
+
+  body.printing-maestros .maestros-print-header h1 {
+    margin: 0;
+    font-size: 22px;
+    font-weight: 700;
+  }
+
+  body.printing-maestros .maestros-print-header p {
+    margin: 4px 0 0;
+    color: #6b7280;
+    font-size: 12px;
+  }
+
+  body.printing-maestros .maestros-print-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+  }
+
+  body.printing-maestros .maestros-print-table th,
+  body.printing-maestros .maestros-print-table td {
+    border: 1px solid #d1d5db;
+    padding: 8px 10px;
+    text-align: left;
+    vertical-align: top;
+  }
+
+  body.printing-maestros .maestros-print-table th {
+    background: #f3f4f6;
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  body.printing-maestros .maestros-print-table .num {
+    text-align: right;
+    white-space: nowrap;
+  }
+}

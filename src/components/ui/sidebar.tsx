@@ -33,7 +33,7 @@ function Sidebar({ className, children }: React.ComponentProps<'aside'>) {
 
   return (
     <>
-      <aside className={cn('hidden w-72 shrink-0 border-r border-border/70 bg-card/80 md:flex md:flex-col', className)}>
+      <aside className={cn('hidden h-screen w-72 shrink-0 border-r border-border/70 bg-card/80 md:flex md:flex-col', className)}>
         {children}
       </aside>
 
@@ -137,7 +137,7 @@ function SidebarMenuSubButton({
 }
 
 function SidebarInset({ className, ...props }: React.ComponentProps<'div'>) {
-  return <div className={cn('min-w-0 flex-1', className)} {...props} />
+  return <div className={cn('flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden', className)} {...props} />
 }
 
 export {
