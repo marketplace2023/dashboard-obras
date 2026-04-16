@@ -50,6 +50,7 @@ import { PartidasPanelWithBoundary } from '@/components/partidas-panel'
 import { MaestrosPanel } from '@/components/maestros-panel'
 import { PresupuestosSinApuPanel } from '@/components/presupuestos-sin-apu-panel'
 import { PresupuestosAumentosPanel } from '@/components/presupuestos-aumentos-panel'
+import { PresupuestosDisminucionesPanel } from '@/components/presupuestos-disminuciones-panel'
 
 type ProviderDashboardProps = {
   user: AuthUser
@@ -63,6 +64,7 @@ type DashboardSection =
   | 'partidas'
   | 'presupuestos-sin-apu'
   | 'presupuestos-aumentos'
+  | 'presupuestos-disminuciones'
   | 'profile'
   | 'catalog'
   | 'master-materiales'
@@ -519,7 +521,7 @@ function ProviderDashboard({ user, token, onLogout }: ProviderDashboardProps) {
     }
   }
 
-  function handleOpenProjectBudget(project: { id: string; nombre: string }, target: 'partidas' | 'presupuestos-sin-apu' | 'presupuestos-aumentos' = 'partidas') {
+  function handleOpenProjectBudget(project: { id: string; nombre: string }, target: 'partidas' | 'presupuestos-sin-apu' | 'presupuestos-aumentos' | 'presupuestos-disminuciones' = 'partidas') {
     setSelectedObraFromProjects(project.id)
     setObrasOpen(true)
     setActiveSection(target)
@@ -530,7 +532,9 @@ function ProviderDashboard({ user, token, onLogout }: ProviderDashboardProps) {
           ? `Proyecto ${project.nombre} listo para cargar presupuesto con APU.`
           : target === 'presupuestos-sin-apu'
             ? `Proyecto ${project.nombre} listo para cargar presupuesto sin A.P.U.`
-            : `Proyecto ${project.nombre} listo para cargar presupuesto de aumentos.`,
+            : target === 'presupuestos-aumentos'
+              ? `Proyecto ${project.nombre} listo para cargar presupuesto de aumentos.`
+              : `Proyecto ${project.nombre} listo para cargar presupuesto de disminuciones.`,
     })
   }
 
@@ -612,7 +616,7 @@ function ProviderDashboard({ user, token, onLogout }: ProviderDashboardProps) {
 
                 <SidebarMenuItem>
                   <SidebarMenuButton
-                    isActive={activeSection === 'projects' || activeSection === 'partidas' || activeSection === 'presupuestos-sin-apu' || activeSection === 'presupuestos-aumentos'}
+                    isActive={activeSection === 'projects' || activeSection === 'partidas' || activeSection === 'presupuestos-sin-apu' || activeSection === 'presupuestos-aumentos' || activeSection === 'presupuestos-disminuciones'}
                     onClick={() => setObrasOpen((open) => !open)}
                   >
                     <Building2 className="size-4" />
@@ -658,6 +662,15 @@ function ProviderDashboard({ user, token, onLogout }: ProviderDashboardProps) {
                         >
                           <ClipboardList className="size-3.5" />
                           Presupuestos de Aumentos
+                        </SidebarMenuSubButton>
+                      </SidebarMenuSubItem>
+                      <SidebarMenuSubItem>
+                        <SidebarMenuSubButton
+                          isActive={activeSection === 'presupuestos-disminuciones'}
+                          onClick={() => setActiveSection('presupuestos-disminuciones')}
+                        >
+                          <ClipboardList className="size-3.5" />
+                          Presupuestos de Disminuciones
                         </SidebarMenuSubButton>
                       </SidebarMenuSubItem>
                     </SidebarMenuSub>
@@ -749,6 +762,10 @@ function ProviderDashboard({ user, token, onLogout }: ProviderDashboardProps) {
 
             {!loading && activeSection === 'presupuestos-aumentos' ? (
               <PresupuestosAumentosPanel user={user} token={token} onMessage={setMessage} initialObraId={selectedObraFromProjects ?? undefined} />
+            ) : null}
+
+            {!loading && activeSection === 'presupuestos-disminuciones' ? (
+              <PresupuestosDisminucionesPanel user={user} token={token} onMessage={setMessage} initialObraId={selectedObraFromProjects ?? undefined} />
             ) : null}
 
             {!loading && (

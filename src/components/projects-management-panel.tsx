@@ -14,7 +14,7 @@ type ProjectsManagementPanelProps = {
   user: AuthUser
   token: string
   onMessage: (message: { tone: 'success' | 'error'; text: string } | null) => void
-  onOpenBudget?: (project: ProjectItem, target?: 'partidas' | 'presupuestos-sin-apu' | 'presupuestos-aumentos') => void
+  onOpenBudget?: (project: ProjectItem, target?: 'partidas' | 'presupuestos-sin-apu' | 'presupuestos-aumentos' | 'presupuestos-disminuciones') => void
 }
 
 type ProjectItem = {
@@ -738,6 +738,9 @@ function ProjectsManagementPanel({ user, token, onMessage, onOpenBudget }: Proje
                         </Button>
                         <Button type="button" variant="outline" className="rounded-full" onClick={() => onOpenBudget?.(project, 'presupuestos-aumentos')}>
                           Presupuesto de Aumentos
+                        </Button>
+                        <Button type="button" variant="outline" className="rounded-full" onClick={() => onOpenBudget?.(project, 'presupuestos-disminuciones')}>
+                          Presupuesto de Disminuciones
                         </Button>
                         <Button type="button" variant="outline" className="rounded-full" onClick={() => handleEditProject(project)}>
                           <PencilLine className="size-4" />
