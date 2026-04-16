@@ -14,7 +14,7 @@ type ProjectsManagementPanelProps = {
   user: AuthUser
   token: string
   onMessage: (message: { tone: 'success' | 'error'; text: string } | null) => void
-  onOpenBudget?: (project: ProjectItem) => void
+  onOpenBudget?: (project: ProjectItem, target?: 'partidas' | 'presupuestos-sin-apu') => void
 }
 
 type ProjectItem = {
@@ -304,7 +304,7 @@ function ProjectsManagementPanel({ user, token, onMessage, onOpenBudget }: Proje
       resetProjectForm()
       onMessage({ tone: 'success', text: editingProjectId ? 'Proyecto actualizado correctamente.' : 'Proyecto creado correctamente.' })
       if (!editingProjectId) {
-        onOpenBudget?.(savedProject)
+        onOpenBudget?.(savedProject, 'partidas')
       }
     } catch (error) {
       onMessage({ tone: 'error', text: error instanceof Error ? error.message : 'No se pudo guardar el proyecto.' })
@@ -730,8 +730,11 @@ function ProjectsManagementPanel({ user, token, onMessage, onOpenBudget }: Proje
                       </div>
 
                       <div className="flex flex-wrap gap-2">
-                        <Button type="button" variant="secondary" className="rounded-full" onClick={() => onOpenBudget?.(project)}>
-                          Abrir APU
+                        <Button type="button" variant="secondary" className="rounded-full" onClick={() => onOpenBudget?.(project, 'partidas')}>
+                          Presupuesto con A.P.U.
+                        </Button>
+                        <Button type="button" variant="outline" className="rounded-full" onClick={() => onOpenBudget?.(project, 'presupuestos-sin-apu')}>
+                          Presupuesto sin A.P.U.
                         </Button>
                         <Button type="button" variant="outline" className="rounded-full" onClick={() => handleEditProject(project)}>
                           <PencilLine className="size-4" />

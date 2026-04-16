@@ -289,7 +289,7 @@ function PartidasPanel({ token, onMessage, initialObraId }: PartidasPanelProps) 
     setLoadingPresupuestos(true)
     setArbol(null)
     setSelectedPresupuestoId('')
-    fetch(`${API_BASE_URL}/presupuestos/obra/${selectedObraId}`, { headers: bimHeaders })
+    fetch(`${API_BASE_URL}/presupuestos/obra/${selectedObraId}?tipo=obra`, { headers: bimHeaders })
       .then((r) => r.json())
       .then((data: unknown) => {
         if (!active) return
@@ -432,7 +432,7 @@ function PartidasPanel({ token, onMessage, initialObraId }: PartidasPanelProps) 
       const r = await fetch(`${API_BASE_URL}/presupuestos`, {
         method: 'POST',
         headers: { ...bimHeaders, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ obra_id: selectedObraId, nombre: newPresNombre.trim() }),
+        body: JSON.stringify({ obra_id: selectedObraId, nombre: newPresNombre.trim(), tipo: 'obra' }),
       })
       if (!r.ok) throw new Error('No se pudo crear el presupuesto')
       const pres = await r.json() as BimPresupuesto

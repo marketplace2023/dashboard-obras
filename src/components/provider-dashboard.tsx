@@ -48,6 +48,7 @@ import { API_BASE_URL, type AuthUser } from '@/lib/auth'
 import { ProjectsManagementPanel } from '@/components/projects-management-panel'
 import { PartidasPanelWithBoundary } from '@/components/partidas-panel'
 import { MaestrosPanel } from '@/components/maestros-panel'
+import { PresupuestosSinApuPanel } from '@/components/presupuestos-sin-apu-panel'
 
 type ProviderDashboardProps = {
   user: AuthUser
@@ -59,6 +60,7 @@ type DashboardSection =
   | 'overview'
   | 'projects'
   | 'partidas'
+  | 'presupuestos-sin-apu'
   | 'profile'
   | 'catalog'
   | 'master-materiales'
@@ -515,11 +517,11 @@ function ProviderDashboard({ user, token, onLogout }: ProviderDashboardProps) {
     }
   }
 
-  function handleOpenProjectBudget(project: { id: string; nombre: string }) {
+  function handleOpenProjectBudget(project: { id: string; nombre: string }, target: 'partidas' | 'presupuestos-sin-apu' = 'partidas') {
     setSelectedObraFromProjects(project.id)
     setObrasOpen(true)
-    setActiveSection('partidas')
-    setMessage({ tone: 'success', text: `Proyecto ${project.nombre} listo para cargar presupuesto con APU.` })
+    setActiveSection(target)
+    setMessage({ tone: 'success', text: target === 'partidas' ? `Proyecto ${project.nombre} listo para cargar presupuesto con APU.` : `Proyecto ${project.nombre} listo para cargar presupuesto sin A.P.U.` })
   }
 
   return (
@@ -600,7 +602,7 @@ function ProviderDashboard({ user, token, onLogout }: ProviderDashboardProps) {
 
                 <SidebarMenuItem>
                   <SidebarMenuButton
-                    isActive={activeSection === 'projects' || activeSection === 'partidas'}
+                    isActive={activeSection === 'projects' || activeSection === 'partidas' || activeSection === 'presupuestos-sin-apu'}
                     onClick={() => setObrasOpen((open) => !open)}
                   >
                     <Building2 className="size-4" />
@@ -627,7 +629,16 @@ function ProviderDashboard({ user, token, onLogout }: ProviderDashboardProps) {
                           onClick={() => setActiveSection('partidas')}
                         >
                           <ListChecks className="size-3.5" />
-                          Partidas de obra
+                          Presupuestos con A.P.U.
+                        </SidebarMenuSubButton>
+                      </SidebarMenuSubItem>
+                      <SidebarMenuSubItem>
+                        <SidebarMenuSubButton
+                          isActive={activeSection === 'presupuestos-sin-apu'}
+                          onClick={() => setActiveSection('presupuestos-sin-apu')}
+                        >
+                          <ListChecks className="size-3.5" />
+                          Presupuestos sin A.P.U.
                         </SidebarMenuSubButton>
                       </SidebarMenuSubItem>
                     </SidebarMenuSub>
@@ -711,6 +722,10 @@ function ProviderDashboard({ user, token, onLogout }: ProviderDashboardProps) {
 
             {!loading && activeSection === 'partidas' ? (
               <PartidasPanelWithBoundary user={user} token={token} onMessage={setMessage} initialObraId={selectedObraFromProjects ?? undefined} />
+            ) : null}
+
+            {!loading && activeSection === 'presupuestos-sin-apu' ? (
+              <PresupuestosSinApuPanel user={user} token={token} onMessage={setMessage} initialObraId={selectedObraFromProjects ?? undefined} />
             ) : null}
 
             {!loading && (
