@@ -160,6 +160,33 @@ type BimApuDetalle = BimApu & {
   descomposicion: BimDescomposicion[]
 }
 
+type PartidaPuBreakdown = {
+  partida_id: string
+  codigo: string
+  descripcion: string
+  breakdown: {
+    costo_directo: string
+    costo_materiales: string
+    costo_equipos: string
+    costo_mano_obra: string
+    costo_otros: string
+    base_labor: string
+    labor_factor: string
+    gastos_medicos: string
+    subtotal_directo_ajustado: string
+    administracion_pct: string
+    utilidad_pct: string
+    financiamiento_pct: string
+    iva_pct: string
+    iva_modo: string
+    base_iva: string
+    financiamiento_incluye_utilidad: boolean
+    total_sin_iva: string
+    iva_monto: string
+    total_final: string
+  }
+}
+
 type MsgState = { tone: 'success' | 'error'; text: string } | null
 
 // ── Props ──────────────────────────────────────────────────────────
@@ -232,6 +259,7 @@ function PartidasPanel({ token, onMessage, initialObraId }: PartidasPanelProps) 
   // ── Modal detalle APU ─────────────────────────────────────────
   const [detailApu, setDetailApu] = useState<BimApuDetalle | null>(null)
   const [loadingDetail, setLoadingDetail] = useState(false)
+  const [detailBreakdown, setDetailBreakdown] = useState<PartidaPuBreakdown | null>(null)
 
   // ── Edit / delete partida ─────────────────────────────────────
   const [editingInsumos, setEditingInsumos] = useState<EditingInsumos | null>(null)
@@ -524,6 +552,7 @@ function PartidasPanel({ token, onMessage, initialObraId }: PartidasPanelProps) 
     handleSelectApu(apu)
     // Open modal immediately with basic data while we fetch the full breakdown
     setDetailApu({ ...apu, rendimiento: '1', vigencia: '', descomposicion: [] })
+    setDetailBreakdown(null)
     setLoadingDetail(true)
     try {
       const r = await fetch(`${API_BASE_URL}/precios-unitarios/${apu.id}`, { headers: bimHeaders })
@@ -531,6 +560,18 @@ function PartidasPanel({ token, onMessage, initialObraId }: PartidasPanelProps) 
       const data = await r.json() as BimApuDetalle
       // Ensure descomposicion is always an array even if the API omits it
       setDetailApu({ ...data, descomposicion: Array.isArray(data.descomposicion) ? data.descomposicion : [] })
+
+      const partidaReferencia = arbol?.capitulos
+        ?.flatMap((capitulo) => capitulo.partidas ?? [])
+        .find((partida) => (partida as BimPartidaRow & { precio_unitario_id?: string | null }).precio_unitario_id === String(apu.id))
+
+      if (partidaReferencia) {
+        const puRes = await fetch(`${API_BASE_URL}/presupuestos/partidas/${partidaReferencia.id}/desglose-pu`, { headers: bimHeaders })
+        if (puRes.ok) {
+          const puData = await puRes.json() as PartidaPuBreakdown
+          setDetailBreakdown(puData)
+        }
+      }
     } catch {
       // keep modal open with basic data; breakdown just won't show
     } finally {
@@ -1152,7 +1193,7 @@ function PartidasPanel({ token, onMessage, initialObraId }: PartidasPanelProps) 
                   />
                 </div>
                 <div className="grid gap-1">
-                  <Label className="text-xs">Precio unitario</Label>
+                  <Label className="text-xs">Precio unitario referencial</Label>
                   <Input
                     type="number"
                     min="0"
@@ -1167,7 +1208,7 @@ function PartidasPanel({ token, onMessage, initialObraId }: PartidasPanelProps) 
               {/* Preview importe */}
               {cantidad && precioOverride ? (
                 <div className="flex items-center justify-between rounded-lg bg-muted/40 px-3 py-2 text-sm">
-                  <span className="text-xs text-muted-foreground">Importe estimado:</span>
+                  <span className="text-xs text-muted-foreground">Importe estimado base APU:</span>
                   <span className="font-semibold tabular-nums">
                     {fmtNum(Number(cantidad) * Number(precioOverride))}
                   </span>
@@ -1242,6 +1283,27 @@ function PartidasPanel({ token, onMessage, initialObraId }: PartidasPanelProps) 
                     <span>Vigencia: {String(detailApu.vigencia).slice(0, 10)}</span>
                   ) : null}
                 </div>
+
+                {detailBreakdown ? (
+                  <div className="mt-3 grid gap-2 rounded-xl border border-border/50 bg-muted/20 p-3 text-xs text-muted-foreground sm:grid-cols-2 lg:grid-cols-4">
+                    <span>Costo directo: <strong className="text-foreground">{fmtNum(detailBreakdown.breakdown.costo_directo, 4)}</strong></span>
+                    <span>Materiales: <strong className="text-foreground">{fmtNum(detailBreakdown.breakdown.costo_materiales, 4)}</strong></span>
+                    <span>Equipos: <strong className="text-foreground">{fmtNum(detailBreakdown.breakdown.costo_equipos, 4)}</strong></span>
+                    <span>Mano de obra: <strong className="text-foreground">{fmtNum(detailBreakdown.breakdown.costo_mano_obra, 4)}</strong></span>
+                    <span>Otros directos: <strong className="text-foreground">{fmtNum(detailBreakdown.breakdown.costo_otros, 4)}</strong></span>
+                    <span>Labor factor: <strong className="text-foreground">{fmtNum(detailBreakdown.breakdown.labor_factor, 4)}</strong></span>
+                    <span>Gastos medicos: <strong className="text-foreground">{fmtNum(detailBreakdown.breakdown.gastos_medicos, 4)}</strong></span>
+                    <span>Subtotal ajustado: <strong className="text-foreground">{fmtNum(detailBreakdown.breakdown.subtotal_directo_ajustado, 4)}</strong></span>
+                    <span>Administracion: <strong className="text-foreground">{detailBreakdown.breakdown.administracion_pct}%</strong></span>
+                    <span>Utilidad: <strong className="text-foreground">{detailBreakdown.breakdown.utilidad_pct}%</strong></span>
+                    <span>Financiamiento: <strong className="text-foreground">{detailBreakdown.breakdown.financiamiento_pct}%</strong></span>
+                    <span>IVA: <strong className="text-foreground">{detailBreakdown.breakdown.iva_pct}% ({detailBreakdown.breakdown.iva_modo})</strong></span>
+                    <span>Base IVA: <strong className="text-foreground">{fmtNum(detailBreakdown.breakdown.base_iva, 4)}</strong></span>
+                    <span>Total sin IVA: <strong className="text-foreground">{fmtNum(detailBreakdown.breakdown.total_sin_iva, 4)}</strong></span>
+                    <span>IVA monto: <strong className="text-foreground">{fmtNum(detailBreakdown.breakdown.iva_monto, 4)}</strong></span>
+                    <span className="sm:col-span-2 lg:col-span-2">PU final proyecto: <strong className="text-primary">{fmtNum(detailBreakdown.breakdown.total_final, 4)}</strong></span>
+                  </div>
+                ) : null}
               </div>
               <button
                 type="button"
@@ -1292,7 +1354,7 @@ function PartidasPanel({ token, onMessage, initialObraId }: PartidasPanelProps) 
                       />
                     </div>
                     <div className="grid gap-1">
-                      <Label className="text-xs">Precio unitario</Label>
+                      <Label className="text-xs">Precio unitario referencial</Label>
                       <Input
                         type="number"
                         min="0"
@@ -1304,7 +1366,7 @@ function PartidasPanel({ token, onMessage, initialObraId }: PartidasPanelProps) 
                     </div>
                     {cantidad && precioOverride ? (
                       <div className="grid gap-1">
-                        <Label className="text-xs">Importe estimado</Label>
+                        <Label className="text-xs">Importe estimado base APU</Label>
                         <div className="flex h-8 items-center rounded-lg bg-background px-3 text-sm font-semibold tabular-nums text-primary">
                           {fmtNum(Number(cantidad) * Number(precioOverride))}
                         </div>

@@ -1,10 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import {
   BadgeCheck,
   Blocks,
   Building2,
+  Calculator,
   ChevronDown,
   ClipboardList,
+  FileText,
   FolderOpen,
   ImagePlus,
   LayoutDashboard,
@@ -48,9 +51,17 @@ import { API_BASE_URL, type AuthUser } from '@/lib/auth'
 import { ProjectsManagementPanel } from '@/components/projects-management-panel'
 import { PartidasPanelWithBoundary } from '@/components/partidas-panel'
 import { MaestrosPanel } from '@/components/maestros-panel'
+import { CierreObraPanel } from '@/components/cierre-obra-panel'
+import { MemoriasDescriptivasPanel } from '@/components/memorias-descriptivas-panel'
+import { ReportesConsolidadosPanel } from '@/components/reportes-consolidados-panel'
 import { PresupuestosSinApuPanel } from '@/components/presupuestos-sin-apu-panel'
 import { PresupuestosAumentosPanel } from '@/components/presupuestos-aumentos-panel'
 import { PresupuestosDisminucionesPanel } from '@/components/presupuestos-disminuciones-panel'
+import { ControlMedicionesPanel } from '@/components/control-mediciones-panel'
+import { ComputosMetricosPanel } from '@/components/computos-metricos-panel'
+import { ObrasExtrasPanel } from '@/components/obras-extras-panel'
+import { ReconsideracionPreciosPanel } from '@/components/reconsideracion-precios-panel'
+import { ValuacionesPanel } from '@/components/valuaciones-panel'
 
 type ProviderDashboardProps = {
   user: AuthUser
@@ -65,6 +76,14 @@ type DashboardSection =
   | 'presupuestos-sin-apu'
   | 'presupuestos-aumentos'
   | 'presupuestos-disminuciones'
+  | 'obras-extras'
+  | 'memorias-descriptivas'
+  | 'reportes-consolidados'
+  | 'cierre-obra'
+  | 'control-mediciones'
+  | 'valuaciones'
+  | 'reconsideracion-precios'
+  | 'computos-metricos'
   | 'profile'
   | 'catalog'
   | 'master-materiales'
@@ -218,6 +237,7 @@ function toBoolean(value: unknown) {
 }
 
 function ProviderDashboard({ user, token, onLogout }: ProviderDashboardProps) {
+  const [searchParams, setSearchParams] = useSearchParams()
   const [activeSection, setActiveSection] = useState<DashboardSection>('overview')
   const [maestrosOpen, setMaestrosOpen] = useState(true)
   const [obrasOpen, setObrasOpen] = useState(false)
@@ -245,6 +265,48 @@ function ProviderDashboard({ user, token, onLogout }: ProviderDashboardProps) {
     if (!storeData?.x_verification_status) return 'draft'
     return storeData.x_verification_status
   }, [storeData])
+
+  const validSections = useMemo<DashboardSection[]>(
+    () => [
+      'overview',
+      'projects',
+      'partidas',
+      'presupuestos-sin-apu',
+      'presupuestos-aumentos',
+      'presupuestos-disminuciones',
+      'obras-extras',
+      'memorias-descriptivas',
+      'reportes-consolidados',
+      'cierre-obra',
+      'control-mediciones',
+      'valuaciones',
+      'reconsideracion-precios',
+      'computos-metricos',
+      'profile',
+      'catalog',
+      'master-materiales',
+      'master-equipos',
+      'master-mano-obra',
+      'master-partidas',
+    ],
+    [],
+  )
+
+  useEffect(() => {
+    const requested = searchParams.get('section')
+    if (!requested) return
+    if (validSections.includes(requested as DashboardSection)) {
+      setActiveSection(requested as DashboardSection)
+    }
+  }, [searchParams, validSections])
+
+  useEffect(() => {
+    const current = searchParams.get('section')
+    if (current === activeSection) return
+    const next = new URLSearchParams(searchParams)
+    next.set('section', activeSection)
+    setSearchParams(next, { replace: true })
+  }, [activeSection, searchParams, setSearchParams])
 
   useEffect(() => {
     let active = true
@@ -407,7 +469,7 @@ function ProviderDashboard({ user, token, onLogout }: ProviderDashboardProps) {
         sku: typeof product.x_attributes_json?.sku === 'string' ? product.x_attributes_json.sku : '',
         stock: product.x_attributes_json?.stock != null ? String(product.x_attributes_json.stock) : '0',
       })
-      setActiveSection('catalog')
+      navigateSection('catalog')
       setMessage({ tone: 'success', text: 'Producto cargado para edicion.' })
     } catch (error) {
       setMessage({ tone: 'error', text: error instanceof Error ? error.message : 'No se pudo cargar el producto.' })
@@ -438,7 +500,7 @@ function ProviderDashboard({ user, token, onLogout }: ProviderDashboardProps) {
 
       setStoreData(updated)
       setMessage({ tone: 'success', text: 'Perfil actualizado correctamente.' })
-      setActiveSection('overview')
+      navigateSection('overview')
     } catch (error) {
       setMessage({ tone: 'error', text: error instanceof Error ? error.message : 'No se pudo guardar el perfil.' })
     } finally {
@@ -495,7 +557,7 @@ function ProviderDashboard({ user, token, onLogout }: ProviderDashboardProps) {
       await refreshProducts()
       resetProductComposer()
       setMessage({ tone: 'success', text: editingProductId ? 'Producto o servicio actualizado correctamente.' : 'Producto o servicio creado correctamente.' })
-      setActiveSection('catalog')
+      navigateSection('catalog')
     } catch (error) {
       setMessage({ tone: 'error', text: error instanceof Error ? error.message : 'No se pudo guardar el producto o servicio.' })
     } finally {
@@ -521,7 +583,7 @@ function ProviderDashboard({ user, token, onLogout }: ProviderDashboardProps) {
     }
   }
 
-  function handleOpenProjectBudget(project: { id: string; nombre: string }, target: 'partidas' | 'presupuestos-sin-apu' | 'presupuestos-aumentos' | 'presupuestos-disminuciones' = 'partidas') {
+  function handleOpenProjectBudget(project: { id: string; nombre: string }, target: 'partidas' | 'presupuestos-sin-apu' | 'presupuestos-aumentos' | 'presupuestos-disminuciones' | 'obras-extras' | 'memorias-descriptivas' | 'reportes-consolidados' | 'cierre-obra' | 'control-mediciones' | 'valuaciones' | 'computos-metricos' | 'reconsideracion-precios' = 'partidas') {
     setSelectedObraFromProjects(project.id)
     setObrasOpen(true)
     setActiveSection(target)
@@ -534,8 +596,28 @@ function ProviderDashboard({ user, token, onLogout }: ProviderDashboardProps) {
             ? `Proyecto ${project.nombre} listo para cargar presupuesto sin A.P.U.`
             : target === 'presupuestos-aumentos'
               ? `Proyecto ${project.nombre} listo para cargar presupuesto de aumentos.`
-              : `Proyecto ${project.nombre} listo para cargar presupuesto de disminuciones.`,
+              : target === 'presupuestos-disminuciones'
+                ? `Proyecto ${project.nombre} listo para cargar presupuesto de disminuciones.`
+                : target === 'obras-extras'
+                  ? `Proyecto ${project.nombre} listo para cargar obras extras.`
+                : target === 'memorias-descriptivas'
+                  ? `Proyecto ${project.nombre} listo para cargar memorias descriptivas.`
+                : target === 'reportes-consolidados'
+                  ? `Proyecto ${project.nombre} listo para consultar reportes consolidados.`
+                : target === 'cierre-obra'
+                  ? `Proyecto ${project.nombre} listo para revisar cierre de obra.`
+                : target === 'control-mediciones'
+                  ? `Proyecto ${project.nombre} listo para cargar control de mediciones.`
+                  : target === 'valuaciones'
+                    ? `Proyecto ${project.nombre} listo para cargar valuaciones.`
+                    : target === 'reconsideracion-precios'
+                      ? `Proyecto ${project.nombre} listo para cargar reconsideración de precios.`
+                   : `Proyecto ${project.nombre} listo para cargar cómputos métricos.`,
     })
+  }
+
+  function navigateSection(section: DashboardSection) {
+    setActiveSection(section)
   }
 
   return (
@@ -581,7 +663,7 @@ function ProviderDashboard({ user, token, onLogout }: ProviderDashboardProps) {
                       <SidebarMenuSubItem>
                         <SidebarMenuSubButton
                           isActive={activeSection === 'master-materiales'}
-                          onClick={() => setActiveSection('master-materiales')}
+                          onClick={() => navigateSection('master-materiales')}
                         >
                           Materiales
                         </SidebarMenuSubButton>
@@ -589,7 +671,7 @@ function ProviderDashboard({ user, token, onLogout }: ProviderDashboardProps) {
                       <SidebarMenuSubItem>
                         <SidebarMenuSubButton
                           isActive={activeSection === 'master-equipos'}
-                          onClick={() => setActiveSection('master-equipos')}
+                          onClick={() => navigateSection('master-equipos')}
                         >
                           Equipos
                         </SidebarMenuSubButton>
@@ -597,7 +679,7 @@ function ProviderDashboard({ user, token, onLogout }: ProviderDashboardProps) {
                       <SidebarMenuSubItem>
                         <SidebarMenuSubButton
                           isActive={activeSection === 'master-mano-obra'}
-                          onClick={() => setActiveSection('master-mano-obra')}
+                          onClick={() => navigateSection('master-mano-obra')}
                         >
                           Mano de Obra
                         </SidebarMenuSubButton>
@@ -605,7 +687,7 @@ function ProviderDashboard({ user, token, onLogout }: ProviderDashboardProps) {
                       <SidebarMenuSubItem>
                         <SidebarMenuSubButton
                           isActive={activeSection === 'master-partidas'}
-                          onClick={() => setActiveSection('master-partidas')}
+                          onClick={() => navigateSection('master-partidas')}
                         >
                           Partidas
                         </SidebarMenuSubButton>
@@ -616,7 +698,7 @@ function ProviderDashboard({ user, token, onLogout }: ProviderDashboardProps) {
 
                 <SidebarMenuItem>
                   <SidebarMenuButton
-                    isActive={activeSection === 'projects' || activeSection === 'partidas' || activeSection === 'presupuestos-sin-apu' || activeSection === 'presupuestos-aumentos' || activeSection === 'presupuestos-disminuciones'}
+                    isActive={activeSection === 'projects' || activeSection === 'partidas' || activeSection === 'presupuestos-sin-apu' || activeSection === 'presupuestos-aumentos' || activeSection === 'presupuestos-disminuciones' || activeSection === 'obras-extras' || activeSection === 'memorias-descriptivas' || activeSection === 'reportes-consolidados' || activeSection === 'cierre-obra' || activeSection === 'control-mediciones' || activeSection === 'valuaciones' || activeSection === 'reconsideracion-precios' || activeSection === 'computos-metricos'}
                     onClick={() => setObrasOpen((open) => !open)}
                   >
                     <Building2 className="size-4" />
@@ -631,7 +713,7 @@ function ProviderDashboard({ user, token, onLogout }: ProviderDashboardProps) {
                       <SidebarMenuSubItem>
                         <SidebarMenuSubButton
                           isActive={activeSection === 'projects'}
-                          onClick={() => setActiveSection('projects')}
+                          onClick={() => navigateSection('projects')}
                         >
                           <FolderOpen className="size-3.5" />
                           Mis proyectos
@@ -640,7 +722,7 @@ function ProviderDashboard({ user, token, onLogout }: ProviderDashboardProps) {
                       <SidebarMenuSubItem>
                         <SidebarMenuSubButton
                           isActive={activeSection === 'partidas'}
-                          onClick={() => setActiveSection('partidas')}
+                          onClick={() => navigateSection('partidas')}
                         >
                           <ListChecks className="size-3.5" />
                           Presupuestos con A.P.U.
@@ -649,7 +731,7 @@ function ProviderDashboard({ user, token, onLogout }: ProviderDashboardProps) {
                       <SidebarMenuSubItem>
                         <SidebarMenuSubButton
                           isActive={activeSection === 'presupuestos-sin-apu'}
-                          onClick={() => setActiveSection('presupuestos-sin-apu')}
+                          onClick={() => navigateSection('presupuestos-sin-apu')}
                         >
                           <ListChecks className="size-3.5" />
                           Presupuestos sin A.P.U.
@@ -658,7 +740,7 @@ function ProviderDashboard({ user, token, onLogout }: ProviderDashboardProps) {
                       <SidebarMenuSubItem>
                         <SidebarMenuSubButton
                           isActive={activeSection === 'presupuestos-aumentos'}
-                          onClick={() => setActiveSection('presupuestos-aumentos')}
+                          onClick={() => navigateSection('presupuestos-aumentos')}
                         >
                           <ClipboardList className="size-3.5" />
                           Presupuestos de Aumentos
@@ -667,10 +749,82 @@ function ProviderDashboard({ user, token, onLogout }: ProviderDashboardProps) {
                       <SidebarMenuSubItem>
                         <SidebarMenuSubButton
                           isActive={activeSection === 'presupuestos-disminuciones'}
-                          onClick={() => setActiveSection('presupuestos-disminuciones')}
+                          onClick={() => navigateSection('presupuestos-disminuciones')}
                         >
                           <ClipboardList className="size-3.5" />
                           Presupuestos de Disminuciones
+                        </SidebarMenuSubButton>
+                      </SidebarMenuSubItem>
+                      <SidebarMenuSubItem>
+                        <SidebarMenuSubButton
+                          isActive={activeSection === 'obras-extras'}
+                          onClick={() => navigateSection('obras-extras')}
+                        >
+                          <ClipboardList className="size-3.5" />
+                          Obras Extras
+                        </SidebarMenuSubButton>
+                      </SidebarMenuSubItem>
+                      <SidebarMenuSubItem>
+                        <SidebarMenuSubButton
+                          isActive={activeSection === 'memorias-descriptivas'}
+                          onClick={() => navigateSection('memorias-descriptivas')}
+                        >
+                          <FileText className="size-3.5" />
+                          Memorias Descriptivas
+                        </SidebarMenuSubButton>
+                      </SidebarMenuSubItem>
+                      <SidebarMenuSubItem>
+                        <SidebarMenuSubButton
+                          isActive={activeSection === 'reportes-consolidados'}
+                          onClick={() => navigateSection('reportes-consolidados')}
+                        >
+                          <FileText className="size-3.5" />
+                          Reportes Consolidados
+                        </SidebarMenuSubButton>
+                      </SidebarMenuSubItem>
+                      <SidebarMenuSubItem>
+                        <SidebarMenuSubButton
+                          isActive={activeSection === 'cierre-obra'}
+                          onClick={() => navigateSection('cierre-obra')}
+                        >
+                          <FileText className="size-3.5" />
+                          Cierre de Obra
+                        </SidebarMenuSubButton>
+                      </SidebarMenuSubItem>
+                      <SidebarMenuSubItem>
+                        <SidebarMenuSubButton
+                          isActive={activeSection === 'control-mediciones'}
+                          onClick={() => navigateSection('control-mediciones')}
+                        >
+                          <ClipboardList className="size-3.5" />
+                          Control de Mediciones
+                        </SidebarMenuSubButton>
+                      </SidebarMenuSubItem>
+                      <SidebarMenuSubItem>
+                        <SidebarMenuSubButton
+                          isActive={activeSection === 'valuaciones'}
+                          onClick={() => navigateSection('valuaciones')}
+                        >
+                          <ClipboardList className="size-3.5" />
+                          Valuaciones
+                        </SidebarMenuSubButton>
+                      </SidebarMenuSubItem>
+                      <SidebarMenuSubItem>
+                        <SidebarMenuSubButton
+                          isActive={activeSection === 'reconsideracion-precios'}
+                          onClick={() => navigateSection('reconsideracion-precios')}
+                        >
+                          <ClipboardList className="size-3.5" />
+                          Reconsideración de Precios
+                        </SidebarMenuSubButton>
+                      </SidebarMenuSubItem>
+                      <SidebarMenuSubItem>
+                        <SidebarMenuSubButton
+                          isActive={activeSection === 'computos-metricos'}
+                          onClick={() => navigateSection('computos-metricos')}
+                        >
+                          <Calculator className="size-3.5" />
+                          Cómputos Métricos
                         </SidebarMenuSubButton>
                       </SidebarMenuSubItem>
                     </SidebarMenuSub>
@@ -684,7 +838,7 @@ function ProviderDashboard({ user, token, onLogout }: ProviderDashboardProps) {
                     <SidebarMenuItem key={item.key}>
                       <SidebarMenuButton
                         isActive={activeSection === item.key}
-                        onClick={() => setActiveSection(item.key)}
+                        onClick={() => navigateSection(item.key)}
                       >
                         <Icon className="size-4" />
                         <span>{item.label}</span>
@@ -768,6 +922,38 @@ function ProviderDashboard({ user, token, onLogout }: ProviderDashboardProps) {
               <PresupuestosDisminucionesPanel user={user} token={token} onMessage={setMessage} initialObraId={selectedObraFromProjects ?? undefined} />
             ) : null}
 
+            {!loading && activeSection === 'obras-extras' ? (
+              <ObrasExtrasPanel user={user} token={token} onMessage={setMessage} initialObraId={selectedObraFromProjects ?? undefined} />
+            ) : null}
+
+            {!loading && activeSection === 'memorias-descriptivas' ? (
+              <MemoriasDescriptivasPanel user={user} token={token} onMessage={setMessage} initialObraId={selectedObraFromProjects ?? undefined} />
+            ) : null}
+
+            {!loading && activeSection === 'reportes-consolidados' ? (
+              <ReportesConsolidadosPanel user={user} token={token} onMessage={setMessage} initialObraId={selectedObraFromProjects ?? undefined} />
+            ) : null}
+
+            {!loading && activeSection === 'cierre-obra' ? (
+              <CierreObraPanel user={user} token={token} onMessage={setMessage} initialObraId={selectedObraFromProjects ?? undefined} />
+            ) : null}
+
+            {!loading && activeSection === 'control-mediciones' ? (
+              <ControlMedicionesPanel user={user} token={token} onMessage={setMessage} initialObraId={selectedObraFromProjects ?? undefined} />
+            ) : null}
+
+            {!loading && activeSection === 'valuaciones' ? (
+              <ValuacionesPanel user={user} token={token} onMessage={setMessage} initialObraId={selectedObraFromProjects ?? undefined} />
+            ) : null}
+
+            {!loading && activeSection === 'reconsideracion-precios' ? (
+              <ReconsideracionPreciosPanel user={user} token={token} onMessage={setMessage} initialObraId={selectedObraFromProjects ?? undefined} />
+            ) : null}
+
+            {!loading && activeSection === 'computos-metricos' ? (
+              <ComputosMetricosPanel user={user} token={token} onMessage={setMessage} initialObraId={selectedObraFromProjects ?? undefined} />
+            ) : null}
+
             {!loading && (
               activeSection === 'master-materiales' ||
               activeSection === 'master-equipos' ||
@@ -822,11 +1008,11 @@ function ProviderDashboard({ user, token, onLogout }: ProviderDashboardProps) {
                     <CardDescription>Completa el perfil y carga tu primera oferta para empezar a operar.</CardDescription>
                   </CardHeader>
                   <CardContent className="grid gap-4 md:grid-cols-2">
-                    <button className="rounded-2xl border border-border/70 bg-muted/25 p-5 text-left transition-colors hover:bg-muted/40" onClick={() => setActiveSection('profile')} type="button">
+                    <button className="rounded-2xl border border-border/70 bg-muted/25 p-5 text-left transition-colors hover:bg-muted/40" onClick={() => navigateSection('profile')} type="button">
                       <p className="font-medium">Completar perfil de proveedor</p>
                       <p className="mt-1 text-sm leading-6 text-muted-foreground">Actualiza datos comerciales, cobertura, licencia y servicio de emergencia.</p>
                     </button>
-                    <button className="rounded-2xl border border-border/70 bg-muted/25 p-5 text-left transition-colors hover:bg-muted/40" onClick={() => setActiveSection('catalog')} type="button">
+                    <button className="rounded-2xl border border-border/70 bg-muted/25 p-5 text-left transition-colors hover:bg-muted/40" onClick={() => navigateSection('catalog')} type="button">
                       <p className="font-medium">Crear producto o servicio</p>
                       <p className="mt-1 text-sm leading-6 text-muted-foreground">Publica una oferta con precio, descripcion, modalidad y cobertura.</p>
                     </button>
@@ -873,17 +1059,25 @@ function ProviderDashboard({ user, token, onLogout }: ProviderDashboardProps) {
                       <Label htmlFor="store-logo">Logo</Label>
                       <div className="flex flex-col gap-3 rounded-2xl border border-border/70 bg-muted/20 p-4">
                         <Input id="store-logo" value={storeForm.logo_url} onChange={(event) => setStoreForm((current) => ({ ...current, logo_url: event.target.value }))} placeholder="https://..." />
-                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                          <input
-                            type="file"
-                            accept="image/*"
-                            onChange={(event) => {
-                              const file = event.target.files?.[0]
-                              if (file) void handleLogoUpload(file)
-                              event.currentTarget.value = ''
-                            }}
-                          />
-                          <Button type="button" variant="outline" className="rounded-full" disabled={uploadingLogo}>
+                        <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+                          <label
+                            htmlFor="store-logo-upload"
+                            className="flex min-h-20 cursor-pointer items-center rounded-2xl border border-dashed border-border/70 bg-background px-4 py-4 text-sm text-muted-foreground transition-colors hover:border-primary/40 hover:bg-primary/5"
+                          >
+                            <input
+                              id="store-logo-upload"
+                              type="file"
+                              accept="image/*"
+                              className="sr-only"
+                              onChange={(event) => {
+                                const file = event.target.files?.[0]
+                                if (file) void handleLogoUpload(file)
+                                event.currentTarget.value = ''
+                              }}
+                            />
+                            <span>Selecciona un archivo de imagen para usarlo como logo del proveedor.</span>
+                          </label>
+                          <Button type="button" variant="outline" className="rounded-full lg:self-center" disabled={uploadingLogo}>
                             {uploadingLogo ? <LoaderCircle className="size-4 animate-spin" /> : <Upload className="size-4" />}
                             Subir logo
                           </Button>
@@ -1003,22 +1197,34 @@ function ProviderDashboard({ user, token, onLogout }: ProviderDashboardProps) {
                       </div>
 
                       <div className="grid gap-3 rounded-2xl border border-border/70 bg-muted/20 p-4">
-                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="flex flex-col gap-3">
                           <div>
                             <p className="text-sm font-medium">Galeria de imagenes</p>
                             <p className="text-sm text-muted-foreground">Usa `upload-images` para guardar imagenes reales del producto.</p>
                           </div>
-                          <div className="flex items-center gap-2">
-                            <input
-                              type="file"
-                              multiple
-                              accept="image/*"
-                              onChange={(event) => {
-                                void handleProductImagesUpload(event.target.files)
-                                event.currentTarget.value = ''
-                              }}
-                            />
-                            <Button type="button" variant="outline" className="rounded-full" disabled={uploadingProductImages}>
+
+                          <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+                            <label
+                              htmlFor="product-gallery-upload"
+                              className="flex min-h-24 cursor-pointer items-center rounded-2xl border border-dashed border-border/70 bg-background px-4 py-4 text-sm text-muted-foreground transition-colors hover:border-primary/40 hover:bg-primary/5"
+                            >
+                              <input
+                                id="product-gallery-upload"
+                                type="file"
+                                multiple
+                                accept="image/*"
+                                className="sr-only"
+                                onChange={(event) => {
+                                  void handleProductImagesUpload(event.target.files)
+                                  event.currentTarget.value = ''
+                                }}
+                              />
+                              <span className="leading-6">
+                                Selecciona una o varias imagenes para cargarlas a la galeria del producto.
+                              </span>
+                            </label>
+
+                            <Button type="button" variant="outline" className="rounded-full lg:self-center" disabled={uploadingProductImages}>
                               {uploadingProductImages ? <LoaderCircle className="size-4 animate-spin" /> : <ImagePlus className="size-4" />}
                               Subir imagenes
                             </Button>

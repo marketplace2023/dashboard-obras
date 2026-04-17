@@ -14,7 +14,7 @@ type ProjectsManagementPanelProps = {
   user: AuthUser
   token: string
   onMessage: (message: { tone: 'success' | 'error'; text: string } | null) => void
-  onOpenBudget?: (project: ProjectItem, target?: 'partidas' | 'presupuestos-sin-apu' | 'presupuestos-aumentos' | 'presupuestos-disminuciones') => void
+  onOpenBudget?: (project: ProjectItem, target?: 'partidas' | 'presupuestos-sin-apu' | 'presupuestos-aumentos' | 'presupuestos-disminuciones' | 'obras-extras' | 'control-mediciones' | 'valuaciones' | 'computos-metricos' | 'reconsideracion-precios' | 'memorias-descriptivas' | 'reportes-consolidados' | 'cierre-obra') => void
 }
 
 type ProjectItem = {
@@ -741,6 +741,30 @@ function ProjectsManagementPanel({ user, token, onMessage, onOpenBudget }: Proje
                         </Button>
                         <Button type="button" variant="outline" className="rounded-full" onClick={() => onOpenBudget?.(project, 'presupuestos-disminuciones')}>
                           Presupuesto de Disminuciones
+                        </Button>
+                        <Button type="button" variant="outline" className="rounded-full" onClick={() => onOpenBudget?.(project, 'control-mediciones')}>
+                          Control de Mediciones
+                        </Button>
+                        <Button type="button" variant="outline" className="rounded-full" onClick={() => onOpenBudget?.(project, 'valuaciones')}>
+                          Valuaciones
+                        </Button>
+                        <Button type="button" variant="outline" className="rounded-full" onClick={() => onOpenBudget?.(project, 'reconsideracion-precios')}>
+                          Reconsideración
+                        </Button>
+                        <Button type="button" variant="outline" className="rounded-full" onClick={() => onOpenBudget?.(project, 'obras-extras')}>
+                          Obras Extras
+                        </Button>
+                        <Button type="button" variant="outline" className="rounded-full" onClick={() => onOpenBudget?.(project, 'memorias-descriptivas')}>
+                          Memorias
+                        </Button>
+                        <Button type="button" variant="outline" className="rounded-full" onClick={() => onOpenBudget?.(project, 'reportes-consolidados')}>
+                          Reportes Consolidados
+                        </Button>
+                        <Button type="button" variant="outline" className="rounded-full" onClick={() => onOpenBudget?.(project, 'cierre-obra')}>
+                          Cierre de Obra
+                        </Button>
+                        <Button type="button" variant="outline" className="rounded-full" onClick={() => onOpenBudget?.(project, 'computos-metricos')}>
+                          Cómputos Métricos
                         </Button>
                         <Button type="button" variant="outline" className="rounded-full" onClick={() => handleEditProject(project)}>
                           <PencilLine className="size-4" />

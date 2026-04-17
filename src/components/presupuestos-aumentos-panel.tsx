@@ -336,7 +336,7 @@ function PresupuestosAumentosPanel({ token, onMessage, initialObraId }: Presupue
     if (!selectedPresupuestoId || !selectedObraId) return
     try {
       const response = await fetch(
-        `${API_BASE_URL}/reportes/pdf?type=presupuesto&obraId=${selectedObraId}&presupuestoId=${selectedPresupuestoId}`,
+        `${API_BASE_URL}/reportes/pdf?type=modificado&obraId=${selectedObraId}&presupuestoId=${selectedPresupuestoId}`,
         { headers },
       )
       if (!response.ok) throw new Error('No se pudo generar el PDF')

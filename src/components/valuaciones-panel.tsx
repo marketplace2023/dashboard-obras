@@ -25,58 +25,59 @@ type BimPresupuesto = {
   tipo: string
 }
 
-type ReconsideracionDocumento = {
+type ValuacionDocumento = {
   id: string
   obra_id: string
   presupuesto_id: string
-  tipo: string
+  medicion_documento_id: string | null
+  numero: number
+  periodo_desde: string
+  periodo_hasta: string
+  estado: string
+  observaciones: string | null
+}
+
+type MedicionDocumento = {
+  id: string
   numero: number
   fecha: string
   titulo: string
-  status: string
 }
 
-type ReconsideracionDetalleRow = {
+type ValuacionDetalleRow = {
   partida_id: string
   nro: number
   codigo: string
   descripcion: string
   unidad: string
-  cantidad_original: string
+  cantidad_presupuesto: string
+  cantidad_anterior: string
+  cantidad_actual: string
+  cantidad_acumulada: string
+  saldo_cantidad: string
   precio_unitario: string
-  total_original: string
-  aumento_actual: string
-  monto_aumento_actual: string
-  disminucion_actual: string
-  monto_disminucion_actual: string
-  cantidad_aumento_acumulado: string
-  total_aumento_acumulado: string
-  cantidad_disminucion_acumulada: string
-  total_disminucion_acumulada: string
-  por_ejecutar: string
-  total_por_ejecutar: string
-  cantidad_modificada: string
-  total_modificado: string
+  monto_presupuesto: string
+  monto_anterior: string
+  monto_actual: string
+  monto_acumulado: string
+  saldo_monto: string
+  porcentaje_avance: string
 }
 
-type ReconsideracionResumen = {
-  documento: ReconsideracionDocumento
+type ValuacionResumen = {
+  documento: ValuacionDocumento
   resumen: {
-    original: string
-    extras: string
-    aumentos_anteriores: string
-    aumentos_actuales: string
-    aumentos_acumulados: string
-    disminuciones_anteriores: string
-    disminuciones_actuales: string
-    disminuciones_acumuladas: string
-    disminuciones: string
-    modificado: string
+    presupuesto_base: string
+    valuado_anterior: string
+    valuado_actual: string
+    valuado_acumulado: string
+    saldo_por_valorar: string
+    porcentaje_avance: string
   }
-  detalle: ReconsideracionDetalleRow[]
+  detalle: ValuacionDetalleRow[]
 }
 
-type PresupuestosDisminucionesPanelProps = {
+type ValuacionesPanelProps = {
   user: AuthUser
   token: string
   onMessage: (msg: MsgState) => void
@@ -98,7 +99,7 @@ function fmtNum(value: string | number, decimals = 2) {
   })
 }
 
-function PresupuestosDisminucionesPanel({ token, onMessage, initialObraId }: PresupuestosDisminucionesPanelProps) {
+function ValuacionesPanel({ token, onMessage, initialObraId }: ValuacionesPanelProps) {
   const headers = useMemo(() => ({ Authorization: `Bearer ${token}` }), [token])
 
   const [obras, setObras] = useState<BimObra[]>([])
@@ -109,19 +110,24 @@ function PresupuestosDisminucionesPanel({ token, onMessage, initialObraId }: Pre
   const [selectedPresupuestoId, setSelectedPresupuestoId] = useState('')
   const [loadingPresupuestos, setLoadingPresupuestos] = useState(false)
 
-  const [documentos, setDocumentos] = useState<ReconsideracionDocumento[]>([])
+  const [documentos, setDocumentos] = useState<ValuacionDocumento[]>([])
   const [selectedDocumentoId, setSelectedDocumentoId] = useState('')
   const [loadingDocumentos, setLoadingDocumentos] = useState(false)
   const [creatingDocumento, setCreatingDocumento] = useState(false)
 
-  const [documentoFecha, setDocumentoFecha] = useState(new Date().toISOString().slice(0, 10))
-  const [documentoTitulo, setDocumentoTitulo] = useState('')
+  const [mediciones, setMediciones] = useState<MedicionDocumento[]>([])
+  const [selectedMedicionId, setSelectedMedicionId] = useState('')
 
-  const [resumen, setResumen] = useState<ReconsideracionResumen | null>(null)
+  const today = new Date().toISOString().slice(0, 10)
+  const [periodoDesde, setPeriodoDesde] = useState(today)
+  const [periodoHasta, setPeriodoHasta] = useState(today)
+
+  const [resumen, setResumen] = useState<ValuacionResumen | null>(null)
   const [loadingResumen, setLoadingResumen] = useState(false)
+  const [savingHeader, setSavingHeader] = useState(false)
   const [savingDetalles, setSavingDetalles] = useState(false)
   const [searchText, setSearchText] = useState('')
-  const [draftDisminuciones, setDraftDisminuciones] = useState<Record<string, string>>({})
+  const [draftActuales, setDraftActuales] = useState<Record<string, string>>({})
 
   useEffect(() => {
     if (initialObraId) setSelectedObraId(initialObraId)
@@ -198,6 +204,8 @@ function PresupuestosDisminucionesPanel({ token, onMessage, initialObraId }: Pre
     if (!selectedObraId || !selectedPresupuestoId) {
       setDocumentos([])
       setSelectedDocumentoId('')
+      setMediciones([])
+      setSelectedMedicionId('')
       setResumen(null)
       return
     }
@@ -207,23 +215,29 @@ function PresupuestosDisminucionesPanel({ token, onMessage, initialObraId }: Pre
     setSelectedDocumentoId('')
     setResumen(null)
 
-    fetch(`${API_BASE_URL}/reconsideraciones/obra/${selectedObraId}?tipo=disminucion&presupuestoId=${selectedPresupuestoId}`, { headers })
-      .then((response) => response.json())
-      .then((data: unknown) => {
+    Promise.all([
+      fetch(`${API_BASE_URL}/certificaciones/obra/${selectedObraId}?presupuestoId=${selectedPresupuestoId}`, { headers }),
+      fetch(`${API_BASE_URL}/mediciones/obra/${selectedObraId}?presupuestoId=${selectedPresupuestoId}`, { headers }),
+    ])
+      .then(async ([certRes, medicionRes]) => {
+        const data = await certRes.json() as unknown
+        const medicionesData = await medicionRes.json() as unknown
         if (!active) return
-        const list = unwrapList<ReconsideracionDocumento>(data)
+        const list = unwrapList<ValuacionDocumento>(data)
+        const medicionesList = unwrapList<MedicionDocumento>(medicionesData)
         setDocumentos(list)
+        setMediciones(medicionesList)
         if (list[0]) {
           setSelectedDocumentoId(String(list[0].id))
         } else {
-          const nextNumero = 1
-          setDocumentoFecha(new Date().toISOString().slice(0, 10))
-          setDocumentoTitulo(`PRESUPUESTO DE DISMINUCIONES Nro. ${nextNumero}`)
+          setPeriodoDesde(today)
+          setPeriodoHasta(today)
+          setSelectedMedicionId('')
         }
       })
       .catch(() => {
         if (!active) return
-        onMessage({ tone: 'error', text: 'No se pudieron cargar los documentos de disminución.' })
+        onMessage({ tone: 'error', text: 'No se pudieron cargar las valuaciones.' })
       })
       .finally(() => {
         if (active) setLoadingDocumentos(false)
@@ -232,30 +246,27 @@ function PresupuestosDisminucionesPanel({ token, onMessage, initialObraId }: Pre
     return () => {
       active = false
     }
-  }, [selectedObraId, selectedPresupuestoId, headers, onMessage])
+  }, [selectedObraId, selectedPresupuestoId, headers, onMessage, today])
 
   const loadResumen = useCallback(async () => {
     if (!selectedDocumentoId) {
       setResumen(null)
-      setDraftDisminuciones({})
+      setDraftActuales({})
       return
     }
 
     setLoadingResumen(true)
     try {
-      const response = await fetch(`${API_BASE_URL}/reconsideraciones/documentos/${selectedDocumentoId}/resumen`, { headers })
+      const response = await fetch(`${API_BASE_URL}/certificaciones/${selectedDocumentoId}/resumen`, { headers })
       if (!response.ok) throw new Error()
-      const data = await response.json() as ReconsideracionResumen
+      const data = await response.json() as ValuacionResumen
       setResumen(data)
-      setDocumentoFecha(data.documento.fecha.slice(0, 10))
-      setDocumentoTitulo(data.documento.titulo)
-      setDraftDisminuciones(
-        Object.fromEntries(
-          data.detalle.map((row) => [row.partida_id, String(Number(row.disminucion_actual || '0'))]),
-        ),
-      )
+      setPeriodoDesde(data.documento.periodo_desde.slice(0, 10))
+      setPeriodoHasta(data.documento.periodo_hasta.slice(0, 10))
+      setSelectedMedicionId(data.documento.medicion_documento_id ?? '')
+      setDraftActuales(Object.fromEntries(data.detalle.map((row) => [row.partida_id, String(Number(row.cantidad_actual || '0'))])))
     } catch {
-      onMessage({ tone: 'error', text: 'No se pudo cargar el detalle de la disminución.' })
+      onMessage({ tone: 'error', text: 'No se pudo cargar el detalle de valuaciones.' })
     } finally {
       setLoadingResumen(false)
     }
@@ -269,24 +280,24 @@ function PresupuestosDisminucionesPanel({ token, onMessage, initialObraId }: Pre
     if (!selectedObraId || !selectedPresupuestoId) return
     setCreatingDocumento(true)
     try {
-      const response = await fetch(`${API_BASE_URL}/reconsideraciones/documentos`, {
+      const response = await fetch(`${API_BASE_URL}/certificaciones`, {
         method: 'POST',
         headers: { ...headers, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           obra_id: selectedObraId,
           presupuesto_id: selectedPresupuestoId,
-          tipo: 'disminucion',
-          fecha: documentoFecha,
-          titulo: documentoTitulo.trim() || undefined,
+          medicion_documento_id: selectedMedicionId || undefined,
+          periodo_desde: periodoDesde,
+          periodo_hasta: periodoHasta,
         }),
       })
-      if (!response.ok) throw new Error('No se pudo crear el documento de disminución')
-      const documento = await response.json() as ReconsideracionDocumento
+      if (!response.ok) throw new Error('No se pudo crear la valuación')
+      const documento = await response.json() as ValuacionDocumento
       setDocumentos((current) => [documento, ...current])
       setSelectedDocumentoId(String(documento.id))
-      onMessage({ tone: 'success', text: 'Documento de disminución creado.' })
+      onMessage({ tone: 'success', text: 'Valuación creada.' })
     } catch (error) {
-      onMessage({ tone: 'error', text: error instanceof Error ? error.message : 'No se pudo crear la disminución.' })
+      onMessage({ tone: 'error', text: error instanceof Error ? error.message : 'No se pudo crear la valuación.' })
     } finally {
       setCreatingDocumento(false)
     }
@@ -294,19 +305,20 @@ function PresupuestosDisminucionesPanel({ token, onMessage, initialObraId }: Pre
 
   async function handleSaveHeader() {
     if (!selectedDocumentoId) return
+    setSavingHeader(true)
     try {
-      const response = await fetch(`${API_BASE_URL}/reconsideraciones/documentos/${selectedDocumentoId}`, {
+      const response = await fetch(`${API_BASE_URL}/certificaciones/${selectedDocumentoId}`, {
         method: 'PATCH',
         headers: { ...headers, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fecha: documentoFecha, titulo: documentoTitulo }),
+        body: JSON.stringify({ periodo_desde: periodoDesde, periodo_hasta: periodoHasta, medicion_documento_id: selectedMedicionId || null }),
       })
-      if (!response.ok) throw new Error('No se pudo guardar la cabecera de la disminución')
-      const updated = await response.json() as ReconsideracionDocumento
-      setDocumentos((current) => current.map((item) => (item.id === updated.id ? updated : item)))
-      onMessage({ tone: 'success', text: 'Cabecera de la disminución actualizada.' })
+      if (!response.ok) throw new Error('No se pudo guardar la cabecera de valuación')
       await loadResumen()
+      onMessage({ tone: 'success', text: 'Cabecera de valuación actualizada.' })
     } catch (error) {
       onMessage({ tone: 'error', text: error instanceof Error ? error.message : 'No se pudo guardar la cabecera.' })
+    } finally {
+      setSavingHeader(false)
     }
   }
 
@@ -314,23 +326,23 @@ function PresupuestosDisminucionesPanel({ token, onMessage, initialObraId }: Pre
     if (!selectedDocumentoId || !resumen) return
     setSavingDetalles(true)
     try {
-      const response = await fetch(`${API_BASE_URL}/reconsideraciones/documentos/${selectedDocumentoId}/detalles`, {
+      const response = await fetch(`${API_BASE_URL}/certificaciones/${selectedDocumentoId}/detalles`, {
         method: 'PATCH',
         headers: { ...headers, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           detalles: resumen.detalle.map((row) => ({
             partida_id: row.partida_id,
-            cantidad_variacion: String(Math.max(Number(draftDisminuciones[row.partida_id] ?? row.disminucion_actual ?? '0'), 0)),
+            cantidad_actual: String(Math.max(Number(draftActuales[row.partida_id] ?? row.cantidad_actual ?? '0'), 0)),
           })),
         }),
       })
-      if (!response.ok) throw new Error('No se pudieron guardar las disminuciones')
-      const data = await response.json() as ReconsideracionResumen
+      if (!response.ok) throw new Error('No se pudieron guardar las valuaciones')
+      const data = await response.json() as ValuacionResumen
       setResumen(data)
-      setDraftDisminuciones(Object.fromEntries(data.detalle.map((row) => [row.partida_id, String(Number(row.disminucion_actual || '0'))])))
-      onMessage({ tone: 'success', text: 'Disminuciones guardadas.' })
+      setDraftActuales(Object.fromEntries(data.detalle.map((row) => [row.partida_id, String(Number(row.cantidad_actual || '0'))])))
+      onMessage({ tone: 'success', text: 'Valuaciones guardadas.' })
     } catch (error) {
-      onMessage({ tone: 'error', text: error instanceof Error ? error.message : 'No se pudieron guardar las disminuciones.' })
+      onMessage({ tone: 'error', text: error instanceof Error ? error.message : 'No se pudieron guardar las valuaciones.' })
     } finally {
       setSavingDetalles(false)
     }
@@ -340,7 +352,7 @@ function PresupuestosDisminucionesPanel({ token, onMessage, initialObraId }: Pre
     if (!selectedPresupuestoId || !selectedObraId) return
     try {
       const response = await fetch(
-        `${API_BASE_URL}/reportes/pdf?type=modificado&obraId=${selectedObraId}&presupuestoId=${selectedPresupuestoId}`,
+        `${API_BASE_URL}/reportes/pdf?type=valuaciones&obraId=${selectedObraId}&presupuestoId=${selectedPresupuestoId}`,
         { headers },
       )
       if (!response.ok) throw new Error('No se pudo generar el PDF')
@@ -369,7 +381,7 @@ function PresupuestosDisminucionesPanel({ token, onMessage, initialObraId }: Pre
         <CardHeader className="pb-3">
           <CardTitle className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Datos del proyecto</CardTitle>
         </CardHeader>
-        <CardContent className="grid gap-4 lg:grid-cols-[minmax(240px,0.9fr)_minmax(260px,1fr)_auto] xl:grid-cols-[minmax(240px,0.9fr)_minmax(320px,1fr)_minmax(320px,1fr)_auto]">
+        <CardContent className="grid gap-4 lg:grid-cols-[minmax(220px,0.85fr)_minmax(240px,1fr)_minmax(240px,1fr)_auto] xl:grid-cols-[minmax(220px,0.85fr)_minmax(260px,1fr)_minmax(320px,1fr)_minmax(320px,1fr)_auto]">
           <div className="grid gap-1.5">
             <Label className="text-xs">Obra</Label>
             {loadingObras ? (
@@ -407,23 +419,33 @@ function PresupuestosDisminucionesPanel({ token, onMessage, initialObraId }: Pre
           </div>
 
           <div className="grid gap-1.5">
-            <Label className="text-xs">Documento de disminución</Label>
+            <Label className="text-xs">Valuación</Label>
             {loadingDocumentos ? (
               <div className="flex h-10 items-center gap-2 rounded-xl border border-border/60 bg-background px-3 text-sm text-muted-foreground">
                 <LoaderCircle className="size-4 animate-spin" />
-                Cargando documentos...
+                Cargando valuaciones...
               </div>
             ) : documentos.length > 0 ? (
               <select value={selectedDocumentoId} onChange={(event) => setSelectedDocumentoId(event.target.value)} className="h-10 rounded-xl border border-border/70 bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40">
                 {documentos.map((documento) => (
-                  <option key={documento.id} value={documento.id}>Disminución Nro. {documento.numero} · {documento.titulo}</option>
+                  <option key={documento.id} value={documento.id}>Valuación Nro. {documento.numero} · {documento.periodo_desde.slice(0, 10)} al {documento.periodo_hasta.slice(0, 10)}</option>
                 ))}
               </select>
             ) : (
               <div className="flex h-10 items-center rounded-xl border border-dashed border-border/60 bg-muted/10 px-3 text-sm text-muted-foreground">
-                Sin documentos aún
+                Sin valuaciones aún
               </div>
             )}
+          </div>
+
+          <div className="grid gap-1.5">
+            <Label className="text-xs">Precargar desde medición</Label>
+            <select value={selectedMedicionId} onChange={(event) => setSelectedMedicionId(event.target.value)} className="h-10 rounded-xl border border-border/70 bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40">
+              <option value="">Sin medición base</option>
+              {mediciones.map((documento) => (
+                <option key={documento.id} value={documento.id}>Medición Nro. {documento.numero} · {documento.fecha.slice(0, 10)} · {documento.titulo}</option>
+              ))}
+            </select>
           </div>
 
           <div className="flex items-end gap-2 xl:justify-end">
@@ -433,7 +455,7 @@ function PresupuestosDisminucionesPanel({ token, onMessage, initialObraId }: Pre
             </Button>
             <Button className="rounded-full" onClick={handleCreateDocumento} disabled={!selectedObraId || !selectedPresupuestoId || creatingDocumento}>
               {creatingDocumento ? <LoaderCircle className="size-4 animate-spin" /> : <Plus className="size-4" />}
-              Nueva disminución
+              Nueva valuación
             </Button>
           </div>
         </CardContent>
@@ -441,50 +463,53 @@ function PresupuestosDisminucionesPanel({ token, onMessage, initialObraId }: Pre
 
       <Card className="border-border/60 bg-card/90 shadow-sm">
         <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Resumen de montos</CardTitle>
-          <CardDescription className="text-xs">Original, disminuciones y modificado del presupuesto seleccionado.</CardDescription>
+          <CardTitle className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Resumen de valuación</CardTitle>
+          <CardDescription className="text-xs">Presupuesto base, valuado anterior, actual, acumulado y saldo.</CardDescription>
         </CardHeader>
         <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
-          <MetricCard label="Original" value={resumen?.resumen.original ?? (selectedPresupuesto?.total_presupuesto ?? '0')} />
-          <MetricCard label="Extras" value={resumen?.resumen.extras ?? '0'} />
-          <MetricCard label="Aumentos" value={resumen?.resumen.aumentos_acumulados ?? '0'} />
-          <MetricCard label="Dism. ant." value={resumen?.resumen.disminuciones_anteriores ?? '0'} />
-          <MetricCard label="Dism. act." value={resumen?.resumen.disminuciones_actuales ?? '0'} />
-          <MetricCard label="Modificado" value={resumen?.resumen.modificado ?? (selectedPresupuesto?.total_presupuesto ?? '0')} tone="primary" />
+          <MetricCard label="Presupuesto base" value={resumen?.resumen.presupuesto_base ?? '0'} />
+          <MetricCard label="Valuado anterior" value={resumen?.resumen.valuado_anterior ?? '0'} />
+          <MetricCard label="Valuado actual" value={resumen?.resumen.valuado_actual ?? '0'} />
+          <MetricCard label="Valuado acumulado" value={resumen?.resumen.valuado_acumulado ?? '0'} />
+          <MetricCard label="Saldo" value={resumen?.resumen.saldo_por_valorar ?? '0'} />
+          <MetricCard label="% Avance" value={resumen?.resumen.porcentaje_avance ?? '0'} tone="primary" suffix="%" />
         </CardContent>
       </Card>
 
       <Card className="border-border/60 bg-card/90 shadow-sm">
         <CardHeader className="pb-3">
           <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
-            <div className="grid gap-3 xl:grid-cols-[170px_170px_minmax(360px,1fr)] xl:items-end">
+            <div className="grid gap-3 xl:grid-cols-[150px_170px_170px] xl:items-end">
               <div className="grid gap-1.5">
-                <Label className="text-xs">Disminución Nro.</Label>
+                <Label className="text-xs">Valuación Nro.</Label>
                 <div className="flex h-10 items-center rounded-xl border border-border/60 bg-background px-3 text-sm font-semibold">
                   {resumen?.documento.numero ?? (documentos.length + 1)}
                 </div>
               </div>
               <div className="grid gap-1.5">
-                <Label className="text-xs">Fecha</Label>
+                <Label className="text-xs">Periodo desde</Label>
                 <div className="relative">
                   <CalendarDays className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                  <Input type="date" value={documentoFecha} onChange={(event) => setDocumentoFecha(event.target.value)} className="pl-10" disabled={!selectedDocumentoId} />
+                  <Input type="date" value={periodoDesde} onChange={(event) => setPeriodoDesde(event.target.value)} className="pl-10" disabled={!selectedDocumentoId} />
                 </div>
               </div>
               <div className="grid gap-1.5">
-                <Label className="text-xs">Titulo</Label>
-                <Input value={documentoTitulo} onChange={(event) => setDocumentoTitulo(event.target.value)} placeholder="PRESUPUESTO DE DISMINUCIONES Nro. 1" disabled={!selectedDocumentoId} />
+                <Label className="text-xs">Periodo hasta</Label>
+                <div className="relative">
+                  <CalendarDays className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input type="date" value={periodoHasta} onChange={(event) => setPeriodoHasta(event.target.value)} className="pl-10" disabled={!selectedDocumentoId} />
+                </div>
               </div>
             </div>
 
             <div className="flex items-center gap-2">
-              <Button variant="outline" className="rounded-full" onClick={handleSaveHeader} disabled={!selectedDocumentoId}>
-                <Pencil className="size-4" />
+              <Button variant="outline" className="rounded-full" onClick={handleSaveHeader} disabled={!selectedDocumentoId || savingHeader}>
+                {savingHeader ? <LoaderCircle className="size-4 animate-spin" /> : <Pencil className="size-4" />}
                 Guardar cabecera
               </Button>
               <Button className="rounded-full" onClick={handleSaveDetalles} disabled={!selectedDocumentoId || savingDetalles || !resumen}>
                 {savingDetalles ? <LoaderCircle className="size-4 animate-spin" /> : <Save className="size-4" />}
-                Guardar disminuciones
+                Guardar valuación
               </Button>
             </div>
           </div>
@@ -510,72 +535,73 @@ function PresupuestosDisminucionesPanel({ token, onMessage, initialObraId }: Pre
             {loadingResumen ? (
               <div className="flex items-center justify-center gap-2 px-4 py-16 text-sm text-muted-foreground">
                 <LoaderCircle className="size-4 animate-spin" />
-                Cargando detalle de la disminución...
+                Cargando detalle de valuaciones...
               </div>
             ) : !selectedDocumentoId ? (
               <div className="px-4 py-16 text-center text-sm text-muted-foreground">
-                Crea o selecciona un documento de disminución para editar la grilla.
+                Crea o selecciona una valuación para editar la grilla.
               </div>
             ) : (
-              <table className="min-w-[1500px] divide-y divide-border/50 text-sm">
+              <table className="min-w-[1550px] divide-y divide-border/50 text-sm">
                 <thead className="bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
                   <tr>
                     <th className="px-3 py-2 text-left">Nro.</th>
                     <th className="px-3 py-2 text-left">Codigo</th>
                     <th className="px-3 py-2 text-left">Descripcion</th>
                     <th className="px-3 py-2 text-left">Und.</th>
-                    <th className="px-3 py-2 text-right">Can. Ori.</th>
-                    <th className="px-3 py-2 text-right">Pre. Uni.</th>
-                    <th className="px-3 py-2 text-right">Total Ori.</th>
-                    <th className="px-3 py-2 text-right">Disminución</th>
-                    <th className="px-3 py-2 text-right">Monto Dism.</th>
-                    <th className="px-3 py-2 text-right">Can. Aum. Acu.</th>
-                    <th className="px-3 py-2 text-right">Total Aum.</th>
-                    <th className="px-3 py-2 text-right">Can. Dism. Acu.</th>
-                    <th className="px-3 py-2 text-right">Total Dism.</th>
-                    <th className="px-3 py-2 text-right">Por Ejecu.</th>
-                    <th className="px-3 py-2 text-right">Total Por Eje.</th>
-                    <th className="px-3 py-2 text-right">Can. Modi.</th>
-                    <th className="px-3 py-2 text-right">Total Mod.</th>
+                    <th className="px-3 py-2 text-right">Cant. Presup.</th>
+                    <th className="px-3 py-2 text-right">Cant. Anterior</th>
+                    <th className="px-3 py-2 text-right">Cant. Actual</th>
+                    <th className="px-3 py-2 text-right">Cant. Acum.</th>
+                    <th className="px-3 py-2 text-right">Saldo Cant.</th>
+                    <th className="px-3 py-2 text-right">P.U.</th>
+                    <th className="px-3 py-2 text-right">Monto Anterior</th>
+                    <th className="px-3 py-2 text-right">Monto Actual</th>
+                    <th className="px-3 py-2 text-right">Monto Acum.</th>
+                    <th className="px-3 py-2 text-right">Saldo</th>
+                    <th className="px-3 py-2 text-right">% Avance</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/30">
                   {filteredRows.map((row) => {
-                    const disminucion = Number(draftDisminuciones[row.partida_id] ?? row.disminucion_actual ?? '0')
+                    const cantidadActual = Number(draftActuales[row.partida_id] ?? row.cantidad_actual ?? '0')
+                    const cantidadAnterior = Number(row.cantidad_anterior)
+                    const cantidadPresupuesto = Number(row.cantidad_presupuesto)
+                    const cantidadAcumulada = cantidadAnterior + cantidadActual
+                    const saldoCantidad = cantidadPresupuesto - cantidadAcumulada
                     const precioUnitario = Number(row.precio_unitario)
-                    const montoActual = disminucion * precioUnitario
-                    const totalDisminucion = (Number(row.total_disminucion_acumulada) - Number(row.monto_disminucion_actual)) + montoActual
-                    const cantidadDisminucionAcu = (Number(row.cantidad_disminucion_acumulada) - Number(row.disminucion_actual)) + disminucion
-                    const cantidadModificada = Number(row.cantidad_original) + Number(row.cantidad_aumento_acumulado) - cantidadDisminucionAcu
-                    const totalModificado = cantidadModificada * precioUnitario
+                    const montoAnterior = Number(row.monto_anterior)
+                    const montoActual = cantidadActual * precioUnitario
+                    const montoAcumulado = montoAnterior + montoActual
+                    const saldoMonto = Number(row.monto_presupuesto) - montoAcumulado
+                    const avance = cantidadPresupuesto > 0 ? (cantidadAcumulada / cantidadPresupuesto) * 100 : 0
+
                     return (
                       <tr key={row.partida_id} className="bg-background/70 hover:bg-muted/10">
                         <td className="px-3 py-2 font-medium text-foreground">{row.nro}</td>
                         <td className="px-3 py-2 font-mono text-xs text-primary">{row.codigo}</td>
                         <td className="px-3 py-2 text-foreground">{row.descripcion}</td>
                         <td className="px-3 py-2 text-foreground">{row.unidad}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{fmtNum(row.cantidad_original, 2)}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{fmtNum(row.precio_unitario, 4)}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{fmtNum(row.total_original)}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">{fmtNum(row.cantidad_presupuesto, 2)}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">{fmtNum(row.cantidad_anterior, 2)}</td>
                         <td className="px-3 py-2">
                           <Input
                             type="number"
                             min="0"
                             step="0.01"
-                            value={draftDisminuciones[row.partida_id] ?? row.disminucion_actual}
-                            onChange={(event) => setDraftDisminuciones((current) => ({ ...current, [row.partida_id]: event.target.value }))}
+                            value={draftActuales[row.partida_id] ?? row.cantidad_actual}
+                            onChange={(event) => setDraftActuales((current) => ({ ...current, [row.partida_id]: event.target.value }))}
                             className="h-8 min-w-[110px] text-right tabular-nums"
                           />
                         </td>
-                        <td className="px-3 py-2 text-right tabular-nums">{fmtNum(montoActual)}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{fmtNum(row.cantidad_aumento_acumulado, 2)}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{fmtNum(row.total_aumento_acumulado)}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{fmtNum(cantidadDisminucionAcu, 2)}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{fmtNum(totalDisminucion)}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{fmtNum(row.por_ejecutar, 2)}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{fmtNum(row.total_por_ejecutar)}</td>
-                        <td className="px-3 py-2 text-right tabular-nums font-medium text-foreground">{fmtNum(cantidadModificada, 2)}</td>
-                        <td className="px-3 py-2 text-right tabular-nums font-semibold text-primary">{fmtNum(totalModificado)}</td>
+                        <td className="px-3 py-2 text-right tabular-nums font-medium text-foreground">{fmtNum(cantidadAcumulada, 2)}</td>
+                        <td className={`px-3 py-2 text-right tabular-nums font-medium ${saldoCantidad < 0 ? 'text-amber-700' : 'text-foreground'}`}>{fmtNum(saldoCantidad, 2)}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">{fmtNum(row.precio_unitario, 4)}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">{fmtNum(row.monto_anterior, 2)}</td>
+                        <td className="px-3 py-2 text-right tabular-nums font-medium text-primary">{fmtNum(montoActual, 2)}</td>
+                        <td className="px-3 py-2 text-right tabular-nums font-medium text-foreground">{fmtNum(montoAcumulado, 2)}</td>
+                        <td className={`px-3 py-2 text-right tabular-nums font-medium ${saldoMonto < 0 ? 'text-amber-700' : 'text-foreground'}`}>{fmtNum(saldoMonto, 2)}</td>
+                        <td className="px-3 py-2 text-right tabular-nums font-semibold text-primary">{fmtNum(avance, 2)}%</td>
                       </tr>
                     )
                   })}
@@ -585,10 +611,10 @@ function PresupuestosDisminucionesPanel({ token, onMessage, initialObraId }: Pre
           </div>
 
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border/50 bg-muted/15 px-4 py-3 text-sm">
-            <span className="text-muted-foreground">Total Disminuciones Acumuladas anterior</span>
-            <span className="font-semibold tabular-nums">{fmtNum(resumen?.resumen.disminuciones_anteriores ?? '0')}</span>
-            <span className="text-muted-foreground">Total Disminuciones Actuales</span>
-            <span className="font-semibold tabular-nums text-primary">{fmtNum(resumen?.resumen.disminuciones_actuales ?? '0')}</span>
+            <span className="text-muted-foreground">Monto valuado anterior</span>
+            <span className="font-semibold tabular-nums">{fmtNum(resumen?.resumen.valuado_anterior ?? '0', 2)}</span>
+            <span className="text-muted-foreground">Monto valuado actual</span>
+            <span className="font-semibold tabular-nums text-primary">{fmtNum(resumen?.resumen.valuado_actual ?? '0', 2)}</span>
           </div>
         </CardContent>
       </Card>
@@ -596,15 +622,15 @@ function PresupuestosDisminucionesPanel({ token, onMessage, initialObraId }: Pre
   )
 }
 
-function MetricCard({ label, value, tone = 'default' }: { label: string; value: string | number; tone?: 'default' | 'primary' }) {
+function MetricCard({ label, value, tone = 'default', suffix = '' }: { label: string; value: string | number; tone?: 'default' | 'primary'; suffix?: string }) {
   return (
     <div className="rounded-2xl border border-border/50 bg-background/70 px-4 py-3 shadow-sm">
       <p className="text-xs uppercase tracking-wide text-muted-foreground">{label}</p>
       <p className={`mt-1 text-lg font-semibold tabular-nums ${tone === 'primary' ? 'text-primary' : 'text-foreground'}`}>
-        {fmtNum(value)}
+        {fmtNum(value)}{suffix}
       </p>
     </div>
   )
 }
 
-export { PresupuestosDisminucionesPanel }
+export { ValuacionesPanel }
