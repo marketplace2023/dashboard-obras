@@ -108,6 +108,9 @@ type StoreResponse = {
   entity_type: string
   x_verification_status?: string | null
   updated_at?: string
+  attributes_json?: {
+    promo_images?: string[]
+  } | null
   profile?: {
     service_area_type?: string | null
     coverage_radius_km?: string | number | null
@@ -164,6 +167,7 @@ type StoreFormState = {
   license_number: string
   insurance_verified: boolean
   emergency_service: boolean
+  promo_images: string[]
 }
 
 type ProductFormState = {
@@ -184,6 +188,18 @@ type ProductFormState = {
 
 type MessageState = { tone: 'success' | 'error'; text: string } | null
 
+const validSellerEntityTypes = new Set([
+  'contractor',
+  'education_provider',
+  'hardware_store',
+  'professional_firm',
+  'seo_agency',
+])
+
+function resolveProductVerticalType(entityType: string) {
+  return validSellerEntityTypes.has(entityType) ? entityType : 'contractor'
+}
+
 const defaultStoreForm: StoreFormState = {
   name: '',
   legal_name: '',
@@ -202,6 +218,7 @@ const defaultStoreForm: StoreFormState = {
   license_number: '',
   insurance_verified: false,
   emergency_service: false,
+  promo_images: [],
 }
 
 const defaultProductForm: ProductFormState = {
@@ -246,6 +263,7 @@ function ProviderDashboard({ user, token, onLogout }: ProviderDashboardProps) {
   const [savingProfile, setSavingProfile] = useState(false)
   const [creatingProduct, setCreatingProduct] = useState(false)
   const [uploadingLogo, setUploadingLogo] = useState(false)
+  const [uploadingPromoImages, setUploadingPromoImages] = useState(false)
   const [uploadingProductImages, setUploadingProductImages] = useState(false)
   const [storeData, setStoreData] = useState<StoreResponse | null>(null)
   const [products, setProducts] = useState<ProductItem[]>([])
@@ -344,6 +362,7 @@ function ProviderDashboard({ user, token, onLogout }: ProviderDashboardProps) {
           license_number: store.profile?.license_number ?? '',
           insurance_verified: toBoolean(store.profile?.insurance_verified),
           emergency_service: toBoolean(store.profile?.emergency_service),
+          promo_images: Array.isArray(store.attributes_json?.promo_images) ? store.attributes_json?.promo_images.filter((item): item is string => typeof item === 'string' && item.length > 0) : [],
         })
       } catch (error) {
         if (!active) return
@@ -439,6 +458,39 @@ function ProviderDashboard({ user, token, onLogout }: ProviderDashboardProps) {
     }
   }
 
+  async function handlePromoImagesUpload(files: FileList | null) {
+    if (!files || files.length === 0) return
+
+    setUploadingPromoImages(true)
+    setMessage(null)
+
+    try {
+      const formData = new FormData()
+      Array.from(files).forEach((file) => formData.append('files', file))
+
+      const response = await parseApiResponse<{ data: Array<{ url: string }> }>(
+        await fetch(`${API_BASE_URL}/stores/upload-images`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+          body: formData,
+        })
+      )
+
+      const urls = response.data.map((item) => item.url)
+      setStoreForm((current) => ({
+        ...current,
+        promo_images: [...current.promo_images, ...urls].filter((url, index, list) => list.indexOf(url) === index),
+      }))
+      setMessage({ tone: 'success', text: 'Imagenes promocionales cargadas correctamente.' })
+    } catch (error) {
+      setMessage({ tone: 'error', text: error instanceof Error ? error.message : 'No se pudieron subir las imagenes promocionales.' })
+    } finally {
+      setUploadingPromoImages(false)
+    }
+  }
+
   async function handleEditProduct(productId: string) {
     setMessage(null)
 
@@ -485,6 +537,9 @@ function ProviderDashboard({ user, token, onLogout }: ProviderDashboardProps) {
       const payload = {
         ...storeForm,
         coverage_radius_km: storeForm.coverage_radius_km ? Number(storeForm.coverage_radius_km) : undefined,
+        attributes_json: {
+          promo_images: storeForm.promo_images,
+        },
       }
 
       const updated = await parseApiResponse<StoreResponse>(
@@ -514,7 +569,8 @@ function ProviderDashboard({ user, token, onLogout }: ProviderDashboardProps) {
     setMessage(null)
 
     try {
-      const listingType = user.entity_type === 'hardware_store' ? 'product' : 'service'
+      const productVerticalType = resolveProductVerticalType(user.entity_type)
+      const listingType = productVerticalType === 'hardware_store' ? 'product' : 'service'
       const payload = {
         name: productForm.name,
         description_sale: productForm.description_sale || undefined,
@@ -546,7 +602,7 @@ function ProviderDashboard({ user, token, onLogout }: ProviderDashboardProps) {
               ? payload
               : {
                   listing_type: listingType,
-                  vertical_type: user.entity_type,
+                  vertical_type: productVerticalType,
                   type: listingType === 'product' ? 'product' : 'service',
                   ...payload,
                 }
@@ -1087,6 +1143,64 @@ function ProviderDashboard({ user, token, onLogout }: ProviderDashboardProps) {
                             <img src={storeForm.logo_url} alt="Logo proveedor" className="h-24 w-auto rounded-xl object-contain" />
                           </div>
                         ) : null}
+                      </div>
+                    </div>
+
+                    <div className="grid gap-2">
+                      <Label htmlFor="store-promo-images">Banners promocionales</Label>
+                      <div className="flex flex-col gap-3 rounded-2xl border border-border/70 bg-muted/20 p-4">
+                        <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+                          <label
+                            htmlFor="store-promo-upload"
+                            className="flex min-h-20 cursor-pointer items-center rounded-2xl border border-dashed border-border/70 bg-background px-4 py-4 text-sm text-muted-foreground transition-colors hover:border-primary/40 hover:bg-primary/5"
+                          >
+                            <input
+                              id="store-promo-upload"
+                              type="file"
+                              accept="image/*"
+                              multiple
+                              className="sr-only"
+                              onChange={(event) => {
+                                void handlePromoImagesUpload(event.target.files)
+                                event.currentTarget.value = ''
+                              }}
+                            />
+                            <span>Sube imagenes horizontales para usarlas como carrusel promocional en la pagina publica.</span>
+                          </label>
+                          <Button type="button" variant="outline" className="rounded-full lg:self-center" disabled={uploadingPromoImages}>
+                            {uploadingPromoImages ? <LoaderCircle className="size-4 animate-spin" /> : <ImagePlus className="size-4" />}
+                            Subir banners
+                          </Button>
+                        </div>
+
+                        {storeForm.promo_images.length > 0 ? (
+                          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                            {storeForm.promo_images.map((imageUrl) => (
+                              <div key={imageUrl} className="overflow-hidden rounded-2xl border border-border/70 bg-background">
+                                <img src={imageUrl} alt="Banner promocional" className="h-32 w-full object-cover" />
+                                <div className="flex justify-end p-2">
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    className="rounded-full"
+                                    onClick={() => setStoreForm((current) => ({
+                                      ...current,
+                                      promo_images: current.promo_images.filter((item) => item !== imageUrl),
+                                    }))}
+                                  >
+                                    <X className="size-4" />
+                                    Quitar
+                                  </Button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="rounded-2xl border border-dashed border-border/60 bg-background/80 px-4 py-6 text-sm text-muted-foreground">
+                            No has cargado banners promocionales todavia.
+                          </div>
+                        )}
                       </div>
                     </div>
 

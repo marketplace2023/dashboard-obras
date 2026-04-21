@@ -1,0 +1,40 @@
+<svg width="1600" height="720" viewBox="0 0 1600 720" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="sky" x1="224" y1="26" x2="1378" y2="728" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#72869A"/>
+      <stop offset="0.54" stop-color="#C5B6A5"/>
+      <stop offset="1" stop-color="#7A6658"/>
+    </linearGradient>
+    <linearGradient id="steel" x1="950" y1="116" x2="1438" y2="642" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ECE7E1"/>
+      <stop offset="1" stop-color="#C8BCB0"/>
+    </linearGradient>
+  </defs>
+  <rect width="1600" height="720" rx="36" fill="url(#sky)"/>
+  <rect y="532" width="1600" height="188" fill="#665246"/>
+  <path d="M1008 102H1490C1512.09 102 1530 119.909 1530 142V618C1530 640.091 1512.09 658 1490 658H1008V102Z" fill="url(#steel)"/>
+  <rect x="1054" y="182" width="118" height="410" rx="10" fill="#8B796C"/>
+  <rect x="1190" y="124" width="118" height="468" rx="10" fill="#6D5B50"/>
+  <rect x="1326" y="244" width="118" height="348" rx="10" fill="#8B796C"/>
+  <rect x="1038" y="232" width="422" height="18" rx="9" fill="#CFC5BC"/>
+  <rect x="1038" y="344" width="422" height="18" rx="9" fill="#CFC5BC"/>
+  <rect x="1038" y="456" width="422" height="18" rx="9" fill="#CFC5BC"/>
+  <rect x="1038" y="568" width="422" height="18" rx="9" fill="#CFC5BC"/>
+  <path d="M1182 84H1246V460H1182V84Z" fill="#40352E"/>
+  <path d="M1214 84H1432V116H1214V84Z" fill="#40352E"/>
+  <path d="M1432 116H1454L1388 176H1360L1432 116Z" fill="#40352E"/>
+  <path d="M1438 176H1470V532H1438V176Z" fill="#40352E"/>
+  <path d="M1022 618H1480V648H1022V618Z" fill="#8A776A"/>
+  <circle cx="1334" cy="210" r="94" fill="#F0E7DD" fill-opacity="0.8"/>
+  <path d="M1292 202C1292 177.699 1311.7 158 1336 158C1360.3 158 1380 177.699 1380 202V248H1292V202Z" fill="#493B33"/>
+  <rect x="1278" y="242" width="114" height="34" rx="17" fill="#F07B21"/>
+  <path d="M1272 514H1436V564C1436 587.196 1417.2 606 1394 606H1314C1290.8 606 1272 587.196 1272 564V514Z" fill="#C67A3E"/>
+  <path d="M1260 510C1260 487.909 1277.91 470 1300 470H1408C1430.09 470 1448 487.909 1448 510V526H1260V510Z" fill="#54453A"/>
+  <rect x="1042" y="94" width="300" height="52" rx="26" fill="#2A211D" fill-opacity="0.2"/>
+  <text x="1086" y="127" fill="#FFF8F2" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="700">OBRA GRIS Y ESTRUCTURA</text>
+  <rect x="944" y="548" width="268" height="88" rx="30" fill="#F5EFE8" fill-opacity="0.94"/>
+  <text x="980" y="588" fill="#5C4B3E" font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="700">CUADRILLAS</text>
+  <text x="980" y="618" fill="#7B685B" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="700">estructura . frentes . avance</text>
+  <path d="M876 610C948 514 1032 476 1124 458" stroke="#E37C2C" stroke-width="10" stroke-linecap="round"/>
+  <path d="M908 540C976 482 1040 444 1102 430" stroke="#F4D6BA" stroke-width="6" stroke-linecap="round"/>
+</svg>

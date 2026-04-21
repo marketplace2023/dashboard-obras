@@ -6,6 +6,8 @@ import { ConsumerDashboard } from '@/components/consumer-dashboard'
 import { ProviderDashboard } from '@/components/provider-dashboard'
 import { type AuthUser } from '@/lib/auth'
 import { clearStoredSession, fetchCurrentUser, readStoredToken } from '@/lib/session'
+import { PublicProductPage } from '@/pages/public-product-page'
+import { PublicStorePage } from '@/pages/public-store-page'
 
 function useSessionState() {
   const [authReady, setAuthReady] = useState(false)
@@ -74,6 +76,8 @@ function AppRoutes() {
   return (
     <Routes>
       <Route path="/" element={<HomePage />} />
+      <Route path="/productos/:id" element={<PublicProductPage />} />
+      <Route path="/proveedores/:id" element={<PublicStorePage />} />
       <Route
         path="/dashboard/provider"
         element={<ProtectedProviderRoute ready={session.authReady} token={session.token} user={session.user} onLogout={session.logout} />}

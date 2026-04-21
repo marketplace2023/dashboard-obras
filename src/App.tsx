@@ -1,36 +1,35 @@
-import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useEffect, useMemo, useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
 import {
   ArrowRight,
-  BadgeCheck,
   Blocks,
   Building2,
-  ChartColumn,
-  Clock3,
+  ChevronLeft,
+  ChevronRight,
   HardHat,
   LayoutGrid,
   Mail,
   MapPin,
   Menu,
-  PackageSearch,
-  Phone,
+  Search,
+  ShieldCheck,
   Store,
-  Truck,
-  WalletCards,
   Wrench,
   type LucideIcon,
 } from 'lucide-react'
-import { Autoplay, Pagination } from 'swiper/modules'
+import { Autoplay, Navigation, Pagination } from 'swiper/modules'
 import { Swiper, SwiperSlide } from 'swiper/react'
 import 'swiper/css'
 import 'swiper/css/pagination'
 
 import './App.css'
+import bannerElectricidad from '@/assets/home-banner-electricidad.svg'
+import bannerObraGris from '@/assets/home-banner-obra-gris.svg'
+import bannerRemodelacion from '@/assets/home-banner-remodelacion.svg'
 import { AuthSection, type AuthTab } from '@/components/auth-section'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Separator } from '@/components/ui/separator'
 import {
   Sheet,
   SheetClose,
@@ -40,7 +39,9 @@ import {
   SheetTitle,
   SheetTrigger,
 } from '@/components/ui/sheet'
+import { Input } from '@/components/ui/input'
 import { API_BASE_URL, AUTH_STORAGE_KEY, type AuthSuccessPayload, type AuthUser } from '@/lib/auth'
+import { fetchMarketplaceListings, formatEntityTypeLabel, formatPrice, type MarketplaceListing, type PublicStore } from '@/lib/public-marketplace'
 import { routeForUser } from '@/lib/session'
 
 type LinkItem = {
@@ -48,195 +49,270 @@ type LinkItem = {
   href: string
 }
 
-type Category = {
+type CategoryItem = {
   title: string
   description: string
   icon: LucideIcon
 }
 
-type Benefit = {
-  title: string
-  description: string
-  icon: LucideIcon
-}
-
-type Product = {
-  title: string
-  description: string
-  className: string
-}
-
-type HeroSlide = {
+type HeroPromoSlide = {
+  id: string
   eyebrow: string
   title: string
   description: string
-  metricLabel: string
-  metricValue: string
-  supportLabel: string
-  supportValue: string
-  tags: string[]
+  badge?: string
+  imageUrl?: string | null
+  primaryHref: string
+  primaryLabel: string
+  secondaryHref: string
+  secondaryLabel: string
+  fallbackClassName: string
+}
+
+type HeroShortcutItem = {
+  title: string
+  description: string
+  cta: string
+  href: string
   icon: LucideIcon
-  className: string
-  accentClassName: string
+}
+
+type FeaturedStoreCard = {
+  id: string
+  name: string
+  entityType: string
+  city: string
+  description: string
+  logoUrl?: string | null
+  isFallback?: boolean
+}
+
+type FeaturedProductCard = {
+  id: string
+  name: string
+  description: string
+  price: string
+  storeName: string
+  storeId: string
+  imageUrl?: string | null
+  city?: string | null
+  isFallback?: boolean
 }
 
 const navItems: LinkItem[] = [
-  { label: 'Soluciones', href: '#soluciones' },
   { label: 'Categorias', href: '#categorias' },
-  { label: 'Marketplace', href: '#marketplace' },
-  { label: 'Contacto', href: '#contacto' },
+  { label: 'Tiendas', href: '#tiendas' },
+  { label: 'Servicios', href: '#servicios' },
+  { label: 'Acceso', href: '#acceso' },
 ]
 
-const brands = ['LATAM', 'Aceromex', 'TGJA', 'VECA', 'LUNDINGOLD']
-
-const categories: Category[] = [
+const categories: CategoryItem[] = [
   {
-    title: 'Obra gris',
-    description: 'Concreto, acero, cimbra y suministro estructural.',
+    title: 'Construcción',
+    description: 'Contratistas, cuadrillas, obra gris y ejecución por frentes.',
+    icon: HardHat,
+  },
+  {
+    title: 'Instalaciones',
+    description: 'Eléctrico, hidráulico, climatización y sistemas especiales.',
+    icon: Wrench,
+  },
+  {
+    title: 'Remodelación',
+    description: 'Adecuaciones, mejoras, rehabilitación y mantenimiento mayor.',
+    icon: Building2,
+  },
+  {
+    title: 'Acabados',
+    description: 'Pisos, pintura, carpintería, baños, cocinas y detalles finales.',
+    icon: LayoutGrid,
+  },
+]
+
+const heroShortcutItems: HeroShortcutItem[] = [
+  {
+    title: 'Remodelaciones',
+    description: 'Cocinas, banos y mejoras por etapas.',
+    cta: 'Ver opciones',
+    href: '#servicios',
     icon: Building2,
   },
   {
     title: 'Instalaciones',
-    description: 'Electrico, hidraulico, HVAC y sistemas especiales.',
+    description: 'Electricidad, agua, clima y soporte tecnico.',
+    cta: 'Explorar servicios',
+    href: '#categorias',
     icon: Wrench,
   },
   {
     title: 'Acabados',
-    description: 'Pisos, muros, carpinteria, pintura e interiorismo.',
+    description: 'Pisos, pintura, carpinteria y detalles finales.',
+    cta: 'Ver categoria',
+    href: '#categorias',
     icon: LayoutGrid,
   },
   {
-    title: 'Logistica de obra',
-    description: 'Entrega coordinada por frente, etapa y ubicacion.',
-    icon: Truck,
-  },
-]
-
-const benefits: Benefit[] = [
-  {
-    title: 'Proveedores verificados',
-    description: 'Homologacion por especialidad, capacidad y cobertura.',
-    icon: BadgeCheck,
-  },
-  {
-    title: 'Comparativos utiles',
-    description: 'Visualiza costo, plazo y condiciones en un solo flujo.',
-    icon: ChartColumn,
-  },
-  {
-    title: 'Credito y pagos',
-    description: 'Alternativas para no comprometer el avance del proyecto.',
-    icon: WalletCards,
-  },
-  {
-    title: 'Seguimiento operativo',
-    description: 'Cada solicitud queda trazada desde la requisicion hasta la entrega.',
-    icon: Clock3,
-  },
-]
-
-const productTags = [
-  'Concreto',
-  'Acero',
-  'Impermeabilizacion',
-  'Tablaroca',
-  'Iluminacion',
-  'Banos y griferia',
-  'Seguridad industrial',
-  'Pisos y muros',
-]
-
-const products: Product[] = [
-  {
-    title: 'Luminarias tecnicas',
-    description: 'Soluciones para interiores comerciales y corporativos.',
-    className: 'md:col-span-3 md:row-span-2 bg-[linear-gradient(135deg,#6d4c1d_0%,#d6a04a_100%)]',
-  },
-  {
-    title: 'Banos y acabados',
-    description: 'Materiales para residencial, hoteleria y usos mixtos.',
-    className: 'md:col-span-3 md:row-span-3 bg-[linear-gradient(135deg,#94806b_0%,#e6d2bb_100%)]',
-  },
-  {
-    title: 'Mobiliario operativo',
-    description: 'Sillas, estaciones de trabajo y equipamiento flexible.',
-    className: 'md:col-span-3 md:row-span-2 bg-[linear-gradient(135deg,#55606c_0%,#97a4b1_100%)]',
-  },
-  {
-    title: 'Cubiertas y fachadas',
-    description: 'Sistemas de envolvente para ritmos acelerados de obra.',
-    className: 'md:col-span-3 md:row-span-4 bg-[linear-gradient(135deg,#1f2a38_0%,#53657a_100%)]',
-  },
-  {
-    title: 'Exterior y paisaje',
-    description: 'Decks, pergolas y acabados para espacios exteriores.',
-    className: 'md:col-span-3 md:row-span-2 bg-[linear-gradient(135deg,#536a4f_0%,#8ea987_100%)]',
-  },
-  {
-    title: 'Agregados y concretos',
-    description: 'Abasto continuo con control de entregas por etapa.',
-    className: 'md:col-span-3 md:row-span-3 bg-[linear-gradient(135deg,#85725b_0%,#d3bea5_100%)]',
-  },
-]
-
-const heroSlides: HeroSlide[] = [
-  {
-    eyebrow: 'Control de compras y ejecucion',
-    title: 'Compras coordinadas para multiples frentes de obra',
-    description: 'Consolida requisiciones, agrupa cotizaciones y prioriza entregas sin perder control operativo.',
-    metricLabel: 'Proveedores activos',
-    metricValue: '1,240+',
-    supportLabel: 'Cotizaciones resueltas',
-    supportValue: '48 h promedio',
-    tags: ['Abasto por etapa', 'Comparativos utiles'],
+    title: 'Obra gris',
+    description: 'Cuadrillas, estructura y ejecucion de frentes.',
+    cta: 'Buscar proveedores',
+    href: '#tiendas',
     icon: HardHat,
-    className: 'bg-[linear-gradient(160deg,hsl(215_23%_34%)_0%,hsl(217_28%_15%)_78%)]',
-    accentClassName: 'bg-[linear-gradient(180deg,rgba(255,255,255,0.98)_0%,rgba(163,174,188,0.92)_100%)]',
   },
   {
-    eyebrow: 'Marketplace tecnico',
-    title: 'Marketplace tecnico para materiales y servicios',
-    description: 'Filtra por categoria, region o capacidad de respuesta y transforma exploracion en oportunidades reales.',
-    metricLabel: 'Partidas disponibles',
-    metricValue: '18,500+',
-    supportLabel: 'Categorias activas',
-    supportValue: '64 especialidades',
-    tags: ['Busqueda por partida', 'Cobertura regional'],
+    title: 'Materiales',
+    description: 'Suministros y publicaciones activas del marketplace.',
+    cta: 'Ver publicaciones',
+    href: '#servicios',
     icon: Store,
-    className: 'bg-[linear-gradient(160deg,hsl(206_32%_30%)_0%,hsl(220_31%_13%)_84%)]',
-    accentClassName: 'bg-[linear-gradient(180deg,rgba(255,225,188,0.98)_0%,rgba(214,154,88,0.88)_100%)]',
+  },
+]
+
+const fallbackHeroSlides: HeroPromoSlide[] = [
+  {
+    id: 'hero-remodelacion',
+    eyebrow: 'Campana de servicios',
+    title: 'Remodelacion integral para cocinas, banos y espacios comerciales.',
+    description: 'Promociona servicios de reforma, rediseno de interiores y ejecucion por etapas con un banner realmente comercial.',
+    badge: 'Agenda visita tecnica',
+    imageUrl: bannerRemodelacion,
+    primaryHref: '#servicios',
+    primaryLabel: 'Ver servicios',
+    secondaryHref: '#tiendas',
+    secondaryLabel: 'Encontrar proveedores',
+    fallbackClassName: 'bg-[linear-gradient(120deg,#b4946f_0%,#e6d0b5_45%,#8b6a4c_100%)]',
   },
   {
-    eyebrow: 'Seguimiento comercial',
-    title: 'Seguimiento comercial y ahorro en tiempo real',
-    description: 'Monitorea solicitudes, avances y oportunidades de ahorro desde una misma vista ejecutiva.',
-    metricLabel: 'Ahorro detectado',
-    metricValue: '-12%',
-    supportLabel: 'Solicitudes activas',
-    supportValue: '126 en proceso',
-    tags: ['Alertas operativas', 'Visibilidad ejecutiva'],
-    icon: ChartColumn,
-    className: 'bg-[linear-gradient(160deg,hsl(220_18%_29%)_0%,hsl(226_24%_12%)_82%)]',
-    accentClassName: 'bg-[linear-gradient(180deg,rgba(221,229,238,0.98)_0%,rgba(120,148,176,0.9)_100%)]',
+    id: 'hero-electrico',
+    eyebrow: 'Ofertas para instalaciones',
+    title: 'Electrificacion, mantenimiento preventivo y soporte tecnico para obra y comercio.',
+    description: 'Un banner de servicio debe vender rapidez, cobertura y confianza, no un producto individual.',
+    badge: 'Cobertura empresarial',
+    imageUrl: bannerElectricidad,
+    primaryHref: '#categorias',
+    primaryLabel: 'Ver categorias',
+    secondaryHref: '#servicios',
+    secondaryLabel: 'Explorar soluciones',
+    fallbackClassName: 'bg-[linear-gradient(120deg,#30445b_0%,#69829f_48%,#1a2431_100%)]',
+  },
+  {
+    id: 'hero-acabados',
+    eyebrow: 'Campana para obra gris',
+    title: 'Cuadrillas, estructura y apoyo en frentes para proyectos de obra gris.',
+    description: 'Ideal para vender servicios de ejecucion, avance de obra y disponibilidad por zona.',
+    badge: 'Equipos listos para arrancar',
+    imageUrl: bannerObraGris,
+    primaryHref: '#tiendas',
+    primaryLabel: 'Buscar cuadrillas',
+    secondaryHref: '#tiendas',
+    secondaryLabel: 'Ver proveedores',
+    fallbackClassName: 'bg-[linear-gradient(120deg,#715447_0%,#caa48c_45%,#3f2b22_100%)]',
+  },
+]
+
+const fallbackStores: FeaturedStoreCard[] = [
+  {
+    id: 'fallback-1',
+    name: 'Construservicios Norte',
+    entityType: 'contractor',
+    city: 'Ciudad de México',
+    description: 'Servicios de construcción, remodelación y coordinación de obra.',
+    isFallback: true,
+  },
+  {
+    id: 'fallback-2',
+    name: 'Red Técnica Integral',
+    entityType: 'professional_firm',
+    city: 'Monterrey',
+    description: 'Especialistas en instalaciones, supervisión y soporte técnico.',
+    isFallback: true,
+  },
+  {
+    id: 'fallback-3',
+    name: 'Materiales del Centro',
+    entityType: 'hardware_store',
+    city: 'Guadalajara',
+    description: 'Catálogo de materiales, acabados y suministros para proyectos.',
+    isFallback: true,
+  },
+]
+
+const fallbackProducts: FeaturedProductCard[] = [
+  {
+    id: 'fallback-product-1',
+    name: 'Servicio de remodelación integral',
+    description: 'Adecuaciones, acabados y coordinación por etapas.',
+    price: formatPrice(1250),
+    storeName: 'Construservicios Norte',
+    storeId: 'fallback-1',
+    city: 'Ciudad de México',
+    isFallback: true,
+  },
+  {
+    id: 'fallback-product-2',
+    name: 'Instalación eléctrica comercial',
+    description: 'Tableros, canalización y puesta en marcha.',
+    price: formatPrice(980),
+    storeName: 'Red Técnica Integral',
+    storeId: 'fallback-2',
+    city: 'Monterrey',
+    isFallback: true,
+  },
+  {
+    id: 'fallback-product-3',
+    name: 'Suministro de acabados interiores',
+    description: 'Pisos, pintura, grifería y accesorios para entrega final.',
+    price: formatPrice(540),
+    storeName: 'Materiales del Centro',
+    storeId: 'fallback-3',
+    city: 'Guadalajara',
+    isFallback: true,
   },
 ]
 
 const footerGroups = [
   {
-    title: 'Servicios',
-    links: ['Marketplace de materiales', 'Gestion de compras', 'Homologacion de proveedores'],
+    title: 'Marketplace',
+    links: ['Categorias', 'Tiendas', 'Servicios publicados'],
   },
   {
-    title: 'Compania',
-    links: ['Sobre GestorObras', 'Casos de exito', 'Politica de servicio'],
+    title: 'Cuenta',
+    links: ['Ingresar', 'Registrarme', 'Panel del proveedor'],
   },
 ]
+
+function mapStoreToCard(store: PublicStore): FeaturedStoreCard {
+  return {
+    id: store.id,
+    name: store.name,
+    entityType: store.entity_type,
+    city: store.city ?? 'Cobertura nacional',
+    description: store.description?.trim() || 'Proveedor publicado en el marketplace de servicios y materiales.',
+    logoUrl: store.logo_url,
+  }
+}
+
+function mapListingToCard(listing: MarketplaceListing): FeaturedProductCard {
+  return {
+    id: listing.id,
+    name: listing.name,
+    description: listing.description_sale?.trim() || 'Servicio publicado en el marketplace.',
+    price: formatPrice(listing.list_price, listing.currency_code || 'USD'),
+    storeName: listing.storeName,
+    storeId: listing.storeId,
+    imageUrl: listing.cover_image_url,
+    city: listing.storeCity,
+  }
+}
 
 function App() {
   const navigate = useNavigate()
   const [authTab, setAuthTab] = useState<AuthTab>('login')
   const [authUser, setAuthUser] = useState<AuthUser | null>(null)
   const [authReady, setAuthReady] = useState(false)
+  const [showAuth, setShowAuth] = useState(false)
+  const [publicStores, setPublicStores] = useState<PublicStore[]>([])
+  const [marketplaceListings, setMarketplaceListings] = useState<MarketplaceListing[]>([])
+  const [marketplaceQuery, setMarketplaceQuery] = useState('')
 
   useEffect(() => {
     const storedToken = window.localStorage.getItem(AUTH_STORAGE_KEY)
@@ -267,9 +343,7 @@ function App() {
       } catch {
         window.localStorage.removeItem(AUTH_STORAGE_KEY)
       } finally {
-        if (active) {
-          setAuthReady(true)
-        }
+        if (active) setAuthReady(true)
       }
     }
 
@@ -280,10 +354,99 @@ function App() {
     }
   }, [])
 
+  useEffect(() => {
+    let active = true
+
+    async function loadMarketplace() {
+      try {
+        const { stores, listings } = await fetchMarketplaceListings({
+          storeLimit: 10,
+          productsPerStore: 5,
+          listingLimit: 18,
+        })
+
+        if (!active) return
+        setPublicStores(stores)
+        setMarketplaceListings(listings)
+      } catch {
+        if (!active) return
+        setPublicStores([])
+        setMarketplaceListings([])
+      }
+    }
+
+    void loadMarketplace()
+
+    return () => {
+      active = false
+    }
+  }, [])
+
+  const normalizedQuery = marketplaceQuery.trim().toLowerCase()
+
+  const filteredStores = useMemo(() => {
+    if (!normalizedQuery) return publicStores
+    return publicStores.filter((store) =>
+      [store.name, store.description, store.city, formatEntityTypeLabel(store.entity_type)]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(normalizedQuery)),
+    )
+  }, [normalizedQuery, publicStores])
+
+  const filteredListings = useMemo(() => {
+    if (!normalizedQuery) return marketplaceListings
+    return marketplaceListings.filter((listing) =>
+      [listing.name, listing.description_sale, listing.storeName, listing.storeCity]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(normalizedQuery)),
+    )
+  }, [normalizedQuery, marketplaceListings])
+
+  const visibleStores = useMemo(() => {
+    if (normalizedQuery) return filteredStores.map(mapStoreToCard)
+    return publicStores.length > 0 ? publicStores.map(mapStoreToCard) : fallbackStores
+  }, [filteredStores, normalizedQuery, publicStores])
+
+  const visibleProducts = useMemo(() => {
+    if (normalizedQuery) return filteredListings.map(mapListingToCard)
+    return marketplaceListings.length > 0 ? marketplaceListings.map(mapListingToCard) : fallbackProducts
+  }, [filteredListings, marketplaceListings, normalizedQuery])
+
+  const marketplaceStats = useMemo(
+    () => [
+      {
+        label: 'Tiendas activas',
+        value: publicStores.length > 0 ? String(publicStores.length) : String(fallbackStores.length),
+      },
+      {
+        label: 'Publicaciones',
+        value: marketplaceListings.length > 0 ? String(marketplaceListings.length) : String(fallbackProducts.length),
+      },
+      {
+        label: 'Especialidades',
+        value: String(categories.length),
+      },
+    ],
+    [marketplaceListings.length, publicStores.length],
+  )
+
+  const heroSlides = fallbackHeroSlides
+  const showStoresAsGrid = visibleStores.length > 0 && visibleStores.length <= 3
+  const showProductsAsGrid = visibleProducts.length > 0 && visibleProducts.length <= 3
+
+  function openAuth(tab: AuthTab) {
+    setAuthTab(tab)
+    setShowAuth(true)
+    window.setTimeout(() => {
+      document.getElementById('auth')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }, 80)
+  }
+
   function handleAuthSuccess(payload: AuthSuccessPayload) {
     window.localStorage.setItem(AUTH_STORAGE_KEY, payload.access_token)
     setAuthUser(payload.user)
     setAuthReady(true)
+    setShowAuth(false)
     navigate(routeForUser(payload.user))
   }
 
@@ -296,7 +459,7 @@ function App() {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <header className="sticky top-0 z-40 border-b border-border/70 bg-background/80 backdrop-blur-xl">
+      <header className="sticky top-0 z-40 border-b border-border/70 bg-background/90 backdrop-blur-xl">
         <div className="mx-auto flex min-h-18 w-full max-w-7xl items-center justify-between gap-6 px-4 sm:px-6 lg:px-8">
           <a className="flex items-center gap-3" href="#inicio">
             <span className="flex size-10 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm">
@@ -304,7 +467,7 @@ function App() {
             </span>
             <div>
               <p className="text-sm font-semibold tracking-tight">GestorObras</p>
-              <p className="text-xs text-muted-foreground">Compras y abastecimiento</p>
+              <p className="text-xs text-muted-foreground">Marketplace de servicios</p>
             </div>
           </a>
 
@@ -323,7 +486,7 @@ function App() {
                   {authUser.role}
                 </Badge>
                 <Button asChild variant="ghost" className="hidden lg:inline-flex">
-                  <a href={routeForUser(authUser)}>{authUser.username}</a>
+                  <a href={routeForUser(authUser)}>Ir a mi panel</a>
                 </Button>
                 <Button variant="outline" className="hidden h-10 rounded-full px-5 sm:inline-flex" onClick={handleLogout}>
                   Salir
@@ -331,15 +494,11 @@ function App() {
               </>
             ) : (
               <>
-                <Button asChild variant="ghost" className="hidden lg:inline-flex">
-                  <a href="#auth" onClick={() => setAuthTab('login')}>
-                    Ingresar
-                  </a>
+                <Button variant="ghost" className="hidden lg:inline-flex" onClick={() => openAuth('login')}>
+                  Ingresar
                 </Button>
-                <Button asChild className="hidden h-10 rounded-full px-5 sm:inline-flex">
-                  <a href="#auth" onClick={() => setAuthTab('register')}>
-                    Registrarme
-                  </a>
+                <Button className="hidden h-10 rounded-full px-5 sm:inline-flex" onClick={() => openAuth('register')}>
+                  Registrarme
                 </Button>
               </>
             )}
@@ -359,7 +518,7 @@ function App() {
                     <span>GestorObras</span>
                   </SheetTitle>
                   <SheetDescription className="text-left">
-                    Navega la home y accede rapido a soluciones, categorias y contacto.
+                    Explora categorías, tiendas, servicios destacados y acceso a la plataforma.
                   </SheetDescription>
                 </SheetHeader>
 
@@ -367,10 +526,7 @@ function App() {
                   <nav className="grid gap-2">
                     {navItems.map((item) => (
                       <SheetClose asChild key={item.label}>
-                        <a
-                          className="flex items-center justify-between rounded-2xl border border-border/70 bg-muted/30 px-4 py-3 text-sm font-medium transition-colors hover:bg-muted"
-                          href={item.href}
-                        >
+                        <a className="flex items-center justify-between rounded-2xl border border-border/70 bg-muted/30 px-4 py-3 text-sm font-medium transition-colors hover:bg-muted" href={item.href}>
                           <span>{item.label}</span>
                           <ArrowRight className="size-4 text-muted-foreground" />
                         </a>
@@ -378,14 +534,12 @@ function App() {
                     ))}
                   </nav>
 
-                  <Separator />
-
                   <div className="grid gap-3">
                     {authUser ? (
                       <>
                         <SheetClose asChild>
                           <Button asChild variant="ghost" className="h-11 justify-start rounded-xl px-4">
-                            <a href={routeForUser(authUser)}>{authUser.username}</a>
+                            <a href={routeForUser(authUser)}>Ir a mi panel</a>
                           </Button>
                         </SheetClose>
                         <SheetClose asChild>
@@ -397,17 +551,13 @@ function App() {
                     ) : (
                       <>
                         <SheetClose asChild>
-                          <Button asChild variant="ghost" className="h-11 justify-start rounded-xl px-4">
-                            <a href="#auth" onClick={() => setAuthTab('login')}>
-                              Ingresar
-                            </a>
+                          <Button variant="ghost" className="h-11 justify-start rounded-xl px-4" onClick={() => openAuth('login')}>
+                            Ingresar
                           </Button>
                         </SheetClose>
                         <SheetClose asChild>
-                          <Button asChild className="h-11 rounded-xl px-4">
-                            <a href="#auth" onClick={() => setAuthTab('register')}>
-                              Registrarme
-                            </a>
+                          <Button className="h-11 rounded-xl px-4" onClick={() => openAuth('register')}>
+                            Registrarme
                           </Button>
                         </SheetClose>
                       </>
@@ -420,383 +570,456 @@ function App() {
         </div>
       </header>
 
-      <main id="inicio">
+      <main id="inicio" className="pb-10">
         <section className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
-          <div className="hero-banner-wrapper overflow-hidden rounded-[2rem] shadow-2xl">
-            <Swiper
-              modules={[Autoplay, Pagination]}
-              pagination={{ clickable: true }}
-              autoplay={{ delay: 4500, disableOnInteraction: false }}
-              loop
-              className="hero-banner-swiper"
-            >
-              {heroSlides.map((slide) => {
-                const Icon = slide.icon
+          <div className="home-hero-shell overflow-hidden rounded-[2rem] shadow-xl">
+            <div className="relative">
+              <Swiper
+                modules={[Autoplay, Navigation, Pagination]}
+                pagination={{ clickable: true }}
+                navigation={{
+                  prevEl: '.home-hero-prev',
+                  nextEl: '.home-hero-next',
+                }}
+                autoplay={{ delay: 5200, disableOnInteraction: false }}
+                loop
+                className="home-hero-swiper"
+              >
+                {heroSlides.map((slide) => (
+                  <SwiperSlide key={slide.id}>
+                    <div className={`relative min-h-[360px] overflow-hidden sm:min-h-[420px] lg:min-h-[480px] ${slide.fallbackClassName}`}>
+                      {slide.imageUrl ? <img src={slide.imageUrl} alt={slide.title} className="absolute inset-0 h-full w-full object-cover" /> : null}
+                      <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(16,18,22,0.76)_0%,rgba(16,18,22,0.46)_44%,rgba(16,18,22,0.1)_100%)]" />
 
-                return (
-                  <SwiperSlide key={slide.title}>
-                    <Card className={`overflow-hidden border-border/60 text-white shadow-none ${slide.className}`}>
-                      <CardContent className="relative min-h-[540px] p-0 sm:min-h-[580px]">
-                        <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(8,12,19,0.82)_0%,rgba(12,18,28,0.74)_38%,rgba(13,18,28,0.32)_100%)]" />
-                        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.16),transparent_26%)]" />
-
-                        <div className="absolute inset-y-0 right-0 hidden w-[48%] lg:block">
-                          <div className="absolute right-[6%] top-[10%] h-52 w-52 rounded-full bg-white/8 blur-3xl" />
-                          <div className="absolute bottom-14 right-12 flex h-64 w-[72%] items-end gap-4">
-                            {[24, 42, 56, 50, 38].map((height, index) => (
-                              <div
-                                key={`${slide.title}-banner-${height}-${index}`}
-                                className={`flex-1 rounded-t-[2rem] border border-white/10 ${slide.accentClassName}`}
-                                style={{ height: `${height}%` }}
-                              />
-                            ))}
-                          </div>
+                      <div className="relative z-10 flex min-h-[360px] max-w-3xl flex-col justify-center gap-5 px-6 py-8 text-white sm:min-h-[420px] sm:px-10 lg:min-h-[480px] lg:px-14">
+                        <div className="flex flex-wrap items-center gap-3">
+                          <Badge variant="secondary" className="rounded-full bg-white/18 px-4 py-1.5 text-white hover:bg-white/18">
+                            {slide.eyebrow}
+                          </Badge>
+                          {slide.badge ? (
+                            <div className="rounded-full bg-white px-4 py-1.5 text-sm font-semibold text-foreground shadow-sm">
+                              {slide.badge}
+                            </div>
+                          ) : null}
                         </div>
 
-                        <div className="relative z-10 flex h-full flex-col p-6 sm:p-8 lg:p-12">
-                          <div className="flex items-start justify-between gap-4">
-                            <Badge variant="secondary" className="rounded-full bg-white/10 px-4 py-1.5 text-white hover:bg-white/10">
-                              {slide.eyebrow}
-                            </Badge>
-
-                            <div className="hidden max-w-[250px] rounded-[1.75rem] border border-white/10 bg-black/20 px-5 py-4 backdrop-blur md:block">
-                              <p className="text-xs uppercase tracking-[0.24em] text-white/55">{slide.metricLabel}</p>
-                              <p className="mt-2 text-2xl font-semibold">{slide.metricValue}</p>
-                            </div>
-                          </div>
-
-                          <div className="mt-auto grid gap-8 lg:grid-cols-[minmax(0,1fr)_280px] lg:items-end">
-                            <div className="max-w-3xl space-y-6">
-                              <div className="space-y-4">
-                                <div className="flex size-14 items-center justify-center rounded-2xl border border-white/10 bg-white/10 backdrop-blur">
-                                  <Icon className="size-6" />
-                                </div>
-                                <h1 className="text-4xl font-semibold tracking-tight text-balance sm:text-5xl lg:text-6xl">
-                                  {slide.title}
-                                </h1>
-                                <p className="max-w-2xl text-base leading-7 text-white/72 sm:text-lg">
-                                  {slide.description}
-                                </p>
-                              </div>
-
-                              <div className="flex flex-col gap-3 sm:flex-row">
-                                <Button asChild size="lg" className="h-11 rounded-full px-6">
-                                  <a href="#soluciones">
-                                    Explorar soluciones
-                                    <ArrowRight className="size-4" />
-                                  </a>
-                                </Button>
-                                <Button
-                                  asChild
-                                  size="lg"
-                                  variant="outline"
-                                  className="h-11 rounded-full border-white/20 bg-white/5 px-6 text-white hover:bg-white/10 hover:text-white"
-                                >
-                                  <a href="#marketplace">Ver marketplace</a>
-                                </Button>
-                              </div>
-
-                              <div className="flex flex-wrap gap-2">
-                                {slide.tags.map((tag) => (
-                                  <Badge
-                                    key={tag}
-                                    variant="secondary"
-                                    className="rounded-full bg-white/10 px-3 py-1 text-white hover:bg-white/10"
-                                  >
-                                    {tag}
-                                  </Badge>
-                                ))}
-                              </div>
-                            </div>
-
-                            <div className="grid gap-3 lg:pb-12">
-                              <div className="rounded-[1.75rem] border border-white/10 bg-black/25 p-5 backdrop-blur">
-                                <p className="text-sm text-white/65">{slide.supportLabel}</p>
-                                <p className="mt-1 text-2xl font-semibold">{slide.supportValue}</p>
-                              </div>
-                              <div className="rounded-[1.75rem] border border-white/10 bg-white/8 p-5 backdrop-blur">
-                                <p className="text-sm text-white/65">Red de proveedores</p>
-                                <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-xs font-medium uppercase tracking-[0.18em] text-white/45">
-                                  {brands.slice(0, 4).map((brand) => (
-                                    <span key={brand}>{brand}</span>
-                                  ))}
-                                </div>
-                              </div>
-                            </div>
-                          </div>
+                        <div className="space-y-4">
+                          <h1 className="max-w-2xl text-4xl font-semibold tracking-tight text-balance sm:text-5xl lg:text-6xl">
+                            {slide.title}
+                          </h1>
+                          <p className="max-w-2xl text-base leading-7 text-white/84 sm:text-lg">{slide.description}</p>
                         </div>
-                      </CardContent>
-                    </Card>
+
+                        <div className="flex flex-wrap gap-3">
+                          <Button asChild className="h-11 rounded-full px-6">
+                            <Link to={slide.primaryHref}>
+                              {slide.primaryLabel}
+                              <ArrowRight className="size-4" />
+                            </Link>
+                          </Button>
+                          <Button asChild variant="outline" className="h-11 rounded-full border-white/30 bg-white/12 px-6 text-white hover:bg-white/18 hover:text-white">
+                            <Link to={slide.secondaryHref}>{slide.secondaryLabel}</Link>
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
                   </SwiperSlide>
-                )
-              })}
-            </Swiper>
+                ))}
+              </Swiper>
+
+              <button type="button" className="home-hero-nav home-hero-prev" aria-label="Slide anterior">
+                <ChevronLeft className="size-5" />
+              </button>
+              <button type="button" className="home-hero-nav home-hero-next" aria-label="Slide siguiente">
+                <ChevronRight className="size-5" />
+              </button>
+            </div>
+
+            <div className="home-shortcuts-strip px-4 pb-4 sm:px-5 lg:px-6 lg:pb-6">
+              <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-5">
+                {heroShortcutItems.map(({ title, description, cta, href, icon: Icon }) => (
+                  <a
+                    key={title}
+                    href={href}
+                    className="home-shortcut-card group rounded-[1.75rem] bg-card/95 p-5 shadow-lg transition-transform hover:-translate-y-1"
+                  >
+                    <div className="mb-4 flex size-16 items-center justify-center rounded-full bg-primary/10 text-primary">
+                      <Icon className="size-7" />
+                    </div>
+                    <p className="text-xl font-semibold tracking-tight">{title}</p>
+                    <p className="mt-3 min-h-16 text-sm leading-6 text-muted-foreground">{description}</p>
+                    <span className="mt-4 inline-flex items-center gap-2 text-sm font-medium text-primary transition-transform group-hover:translate-x-1">
+                      {cta}
+                      <ArrowRight className="size-4" />
+                    </span>
+                  </a>
+                ))}
+              </div>
+            </div>
+
+            <div className="px-4 pb-4 sm:px-5 lg:px-6 lg:pb-6">
+              <div className="grid gap-3 rounded-[1.6rem] border border-border/70 bg-background/95 p-4 shadow-sm lg:grid-cols-[minmax(0,1fr)_auto_auto] lg:items-center">
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">Busca por proveedor, servicio o ciudad</p>
+                  <div className="mt-3 flex items-center gap-2 rounded-full border border-border/70 bg-background px-4 py-3 shadow-sm">
+                    <Search className="size-4 text-muted-foreground" />
+                    <Input
+                      value={marketplaceQuery}
+                      onChange={(event) => setMarketplaceQuery(event.target.value)}
+                      placeholder="Ej. remodelación, eléctrico, Monterrey"
+                      className="h-auto border-0 bg-transparent px-0 py-0 shadow-none focus-visible:ring-0"
+                    />
+                  </div>
+                </div>
+
+                <Button asChild className="h-11 rounded-full px-5">
+                  <a href="#servicios">Ver publicaciones</a>
+                </Button>
+
+                <div className="grid grid-cols-3 gap-2 lg:min-w-[260px]">
+                  {marketplaceStats.map((item) => (
+                    <div key={item.label} className="rounded-2xl border border-border/60 bg-muted/30 px-3 py-3 text-center">
+                      <p className="text-lg font-semibold tracking-tight">{item.value}</p>
+                      <p className="mt-1 text-[11px] leading-4 text-muted-foreground">{item.label}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
           </div>
         </section>
-
-        <AuthSection
-          activeTab={authTab}
-          onTabChange={setAuthTab}
-          user={authUser}
-          authReady={authReady}
-          onAuthSuccess={handleAuthSuccess}
-          onLogout={handleLogout}
-        />
 
         <section id="categorias" className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
           <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
             <div className="space-y-3">
               <Badge variant="outline" className="rounded-full px-3 py-1">
-                Categorias clave
+                Categorías
               </Badge>
-              <h2 className="text-3xl font-semibold tracking-tight sm:text-4xl">Abastecimiento por especialidad</h2>
+              <h2 className="text-3xl font-semibold tracking-tight sm:text-4xl">Explora por especialidad</h2>
             </div>
             <p className="max-w-xl text-sm leading-6 text-muted-foreground sm:text-base">
-              La home ahora esta compuesta sobre primitives de shadcn para que el sistema visual sea
-              consistente y escalable con el resto del producto.
+              Menos bloques decorativos y más acceso directo a las áreas de servicio más buscadas.
             </p>
           </div>
 
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             {categories.map(({ title, description, icon: Icon }) => (
-              <Card key={title} className="border-border/60 bg-card/80 shadow-sm transition-transform hover:-translate-y-0.5">
-                <CardHeader className="space-y-4">
-                  <div className="flex size-11 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+              <Card key={title} className="border-border/60 bg-card/90 shadow-sm transition-transform hover:-translate-y-0.5">
+                <CardContent className="space-y-4 p-5">
+                  <div className="flex size-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
                     <Icon className="size-5" />
                   </div>
                   <div className="space-y-2">
-                    <CardTitle className="text-xl">{title}</CardTitle>
-                    <CardDescription className="text-sm leading-6">{description}</CardDescription>
+                    <p className="text-lg font-semibold tracking-tight">{title}</p>
+                    <p className="text-sm leading-6 text-muted-foreground">{description}</p>
                   </div>
-                </CardHeader>
+                </CardContent>
               </Card>
             ))}
           </div>
         </section>
 
-        <section id="soluciones" className="mx-auto max-w-7xl space-y-6 px-4 py-6 sm:px-6 lg:px-8">
-          <div className="grid gap-6 lg:grid-cols-2">
-            <Card className="overflow-hidden border-border/60 bg-[linear-gradient(145deg,hsl(220_20%_15%)_0%,hsl(214_22%_10%)_100%)] text-white shadow-xl">
-              <CardContent className="grid gap-6 p-6 sm:p-8 lg:grid-cols-[minmax(0,1fr)_220px] lg:items-center">
-                <div className="space-y-5">
-                  <Badge variant="secondary" className="rounded-full bg-white/10 px-3 py-1 text-white hover:bg-white/10">
-                    GestorObras Concierge
-                  </Badge>
-                  <div className="space-y-3">
-                    <h2 className="text-3xl font-semibold tracking-tight sm:text-4xl">
-                      Soporte experto para compras tecnicas y proyectos complejos.
-                    </h2>
-                    <p className="text-sm leading-6 text-white/72 sm:text-base">
-                      Te acompanamos a definir alcances, solicitar propuestas utiles y cerrar con
-                      proveedores confiables para cada frente de obra.
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <Badge variant="secondary" className="rounded-full bg-white/8 px-3 py-1 text-white hover:bg-white/8">
-                      Comparativos guiados
-                    </Badge>
-                    <Badge variant="secondary" className="rounded-full bg-white/8 px-3 py-1 text-white hover:bg-white/8">
-                      Acompanamiento comercial
-                    </Badge>
-                  </div>
-                  <Button asChild className="h-11 w-fit rounded-full px-5">
-                    <a href="#contacto">
-                      Solicitar soporte
-                      <ArrowRight className="size-4" />
-                    </a>
-                  </Button>
-                </div>
-                <Card className="border-white/10 bg-white/6 shadow-none">
-                  <CardContent className="space-y-4 p-5 text-sm text-white/75">
-                    <div className="flex items-center gap-3">
-                      <div className="flex size-10 items-center justify-center rounded-2xl bg-white/10">
-                        <HardHat className="size-5" />
-                      </div>
-                      <div>
-                        <p className="font-medium text-white">Mesa operativa</p>
-                        <p>Respuesta comercial coordinada</p>
+        <section id="tiendas" className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+          <div className="mb-6 space-y-3">
+            <Badge variant="outline" className="rounded-full px-3 py-1">
+              Tiendas y proveedores
+            </Badge>
+            <h2 className="text-3xl font-semibold tracking-tight sm:text-4xl">Tiendas destacadas</h2>
+          </div>
+
+          {normalizedQuery && visibleStores.length === 0 ? (
+            <Card className="border-border/60 bg-card/90 shadow-sm">
+              <CardContent className="px-6 py-12 text-center text-sm text-muted-foreground">
+                No se encontraron tiendas con esa búsqueda.
+              </CardContent>
+            </Card>
+          ) : showStoresAsGrid ? (
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              {visibleStores.map((store) => (
+                <Card key={store.id} className="h-full border-border/60 bg-card/90 shadow-sm">
+                  <CardContent className="flex h-full flex-col gap-4 p-5">
+                    <div className="flex items-start gap-3">
+                      {store.logoUrl ? (
+                        <img src={store.logoUrl} alt={store.name} className="size-14 rounded-2xl border border-border/60 object-cover" />
+                      ) : (
+                        <div className="flex size-14 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                          <Store className="size-5" />
+                        </div>
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-lg font-semibold tracking-tight">{store.name}</p>
+                        <p className="text-sm text-muted-foreground">{formatEntityTypeLabel(store.entityType)}</p>
                       </div>
                     </div>
-                    <Separator className="bg-white/10" />
-                    <p>Ideal para partidas con multiples proveedores, urgencia o alta complejidad tecnica.</p>
+
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <MapPin className="size-4" />
+                      <span>{store.city}</span>
+                    </div>
+
+                    <p className="line-clamp-3 text-sm leading-6 text-muted-foreground">{store.description}</p>
+
+                    {!store.isFallback ? (
+                      <Button asChild variant="outline" className="mt-auto rounded-full">
+                        <Link to={`/proveedores/${store.id}`}>Ver tienda</Link>
+                      </Button>
+                    ) : null}
                   </CardContent>
                 </Card>
-              </CardContent>
-            </Card>
+              ))}
+            </div>
+          ) : (
+            <Swiper
+              spaceBetween={16}
+              slidesPerView={1.1}
+              autoplay={{ delay: 4200, disableOnInteraction: false }}
+              modules={[Autoplay]}
+              breakpoints={{
+                640: { slidesPerView: 1.5 },
+                900: { slidesPerView: 2.2 },
+                1200: { slidesPerView: 3.1 },
+              }}
+            >
+              {visibleStores.map((store) => (
+                <SwiperSlide key={store.id}>
+                  <Card className="h-full border-border/60 bg-card/90 shadow-sm">
+                    <CardContent className="flex h-full flex-col gap-4 p-5">
+                      <div className="flex items-start gap-3">
+                        {store.logoUrl ? (
+                          <img src={store.logoUrl} alt={store.name} className="size-14 rounded-2xl border border-border/60 object-cover" />
+                        ) : (
+                          <div className="flex size-14 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                            <Store className="size-5" />
+                          </div>
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-lg font-semibold tracking-tight">{store.name}</p>
+                          <p className="text-sm text-muted-foreground">{formatEntityTypeLabel(store.entityType)}</p>
+                        </div>
+                      </div>
 
-            <Card id="marketplace" className="overflow-hidden border-border/60 bg-card/80 shadow-xl">
-              <CardContent className="grid gap-6 p-6 sm:p-8 lg:grid-cols-[minmax(0,1fr)_220px] lg:items-center">
-                <div className="space-y-5">
-                  <Badge variant="outline" className="rounded-full px-3 py-1">
-                    Marketplace
-                  </Badge>
-                  <div className="space-y-3">
-                    <h2 className="text-3xl font-semibold tracking-tight sm:text-4xl">
-                      Un catalogo vivo para materiales, servicios y equipamiento.
-                    </h2>
-                    <p className="text-sm leading-6 text-muted-foreground sm:text-base">
-                      Filtra por especialidad, region o capacidad de entrega y convierte la exploracion en
-                      solicitudes listas para cotizar.
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <Badge variant="secondary" className="rounded-full px-3 py-1">
-                      Catalogo por partida
-                    </Badge>
-                    <Badge variant="secondary" className="rounded-full px-3 py-1">
-                      Filtros por ubicacion
-                    </Badge>
-                  </div>
-                  <Button asChild variant="outline" className="h-11 w-fit rounded-full px-5">
-                    <a href="#productos">Explorar productos</a>
-                  </Button>
-                </div>
-                <div className="grid gap-3">
-                  {['Acabados', 'Mobiliario', 'Instalaciones'].map((item) => (
-                    <Card key={item} className="border-border/60 bg-muted/40 shadow-none">
-                      <CardContent className="flex items-center gap-3 p-4">
-                        <div className="flex size-10 items-center justify-center rounded-xl bg-background text-primary shadow-sm">
-                          <Store className="size-4" />
-                        </div>
-                        <div>
-                          <p className="font-medium tracking-tight">{item}</p>
-                          <p className="text-sm text-muted-foreground">Disponibilidad y comparacion</p>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          </div>
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <MapPin className="size-4" />
+                        <span>{store.city}</span>
+                      </div>
+
+                      <p className="line-clamp-3 text-sm leading-6 text-muted-foreground">{store.description}</p>
+
+                      {!store.isFallback ? (
+                        <Button asChild variant="outline" className="mt-auto rounded-full">
+                          <Link to={`/proveedores/${store.id}`}>Ver tienda</Link>
+                        </Button>
+                      ) : null}
+                    </CardContent>
+                  </Card>
+                </SwiperSlide>
+              ))}
+            </Swiper>
+          )}
         </section>
 
-        <section className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
-          <Card className="border-border/60 bg-card/80 shadow-sm">
-            <CardContent className="grid gap-6 p-6 sm:p-8 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] lg:items-start">
-              <div className="space-y-4">
-                <Badge variant="outline" className="rounded-full px-3 py-1">
-                  Por que funciona
-                </Badge>
-                <h2 className="text-3xl font-semibold tracking-tight sm:text-4xl">
-                  Pensado para compradores tecnicos, operaciones y direccion.
-                </h2>
-                <p className="text-sm leading-6 text-muted-foreground sm:text-base">
-                  En vez de una landing decorativa, la home ahora refleja el lenguaje del sistema: cards,
-                  badges, inputs y separadores reutilizables.
+        <section id="servicios" className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+          <div className="mb-6 space-y-3">
+            <Badge variant="outline" className="rounded-full px-3 py-1">
+              Servicios y productos
+            </Badge>
+            <h2 className="text-3xl font-semibold tracking-tight sm:text-4xl">Publicaciones destacadas</h2>
+          </div>
+
+          {normalizedQuery && visibleProducts.length === 0 ? (
+            <Card className="border-border/60 bg-card/90 shadow-sm">
+              <CardContent className="px-6 py-12 text-center text-sm text-muted-foreground">
+                No se encontraron servicios o productos con esa búsqueda.
+              </CardContent>
+            </Card>
+          ) : showProductsAsGrid ? (
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              {visibleProducts.map((product) => (
+                <Card key={product.id} className="h-full overflow-hidden border-border/60 bg-card/90 shadow-sm">
+                  <div className="relative h-48 bg-[linear-gradient(135deg,#2d3d53_0%,#627792_100%)]">
+                    {product.imageUrl ? <img src={product.imageUrl} alt={product.name} className="h-full w-full object-cover" /> : null}
+                    <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(10,14,20,0.08)_0%,rgba(10,14,20,0.68)_100%)]" />
+                    <div className="absolute bottom-3 left-3 right-3 flex items-end justify-between gap-3">
+                      <Badge variant="secondary" className="rounded-full bg-white/14 px-3 py-1 text-white hover:bg-white/14">
+                        {product.storeName}
+                      </Badge>
+                      <div className="rounded-full bg-white px-3 py-1 text-sm font-semibold text-foreground shadow-sm">
+                        {product.price}
+                      </div>
+                    </div>
+                  </div>
+
+                  <CardContent className="flex h-[calc(100%-12rem)] flex-col gap-4 p-5">
+                    <div className="space-y-2">
+                      <p className="line-clamp-2 text-lg font-semibold tracking-tight">{product.name}</p>
+                      <p className="line-clamp-3 text-sm leading-6 text-muted-foreground">{product.description}</p>
+                    </div>
+
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <ShieldCheck className="size-4" />
+                      <span>{product.city || 'Cobertura publicada'}</span>
+                    </div>
+
+                    {!product.isFallback ? (
+                      <div className="mt-auto flex flex-wrap gap-2">
+                        <Button asChild className="rounded-full">
+                          <Link to={`/productos/${product.id}`}>Ver publicación</Link>
+                        </Button>
+                        <Button asChild variant="outline" className="rounded-full">
+                          <Link to={`/proveedores/${product.storeId}`}>Ver tienda</Link>
+                        </Button>
+                      </div>
+                    ) : null}
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          ) : (
+            <Swiper
+              spaceBetween={16}
+              slidesPerView={1.05}
+              autoplay={{ delay: 4500, disableOnInteraction: false }}
+              modules={[Autoplay]}
+              breakpoints={{
+                640: { slidesPerView: 1.4 },
+                900: { slidesPerView: 2.2 },
+                1200: { slidesPerView: 3.2 },
+              }}
+            >
+              {visibleProducts.map((product) => (
+                <SwiperSlide key={product.id}>
+                  <Card className="h-full overflow-hidden border-border/60 bg-card/90 shadow-sm">
+                    <div className="relative h-48 bg-[linear-gradient(135deg,#2d3d53_0%,#627792_100%)]">
+                      {product.imageUrl ? (
+                        <img src={product.imageUrl} alt={product.name} className="h-full w-full object-cover" />
+                      ) : null}
+                      <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(10,14,20,0.08)_0%,rgba(10,14,20,0.68)_100%)]" />
+                      <div className="absolute bottom-3 left-3 right-3 flex items-end justify-between gap-3">
+                        <Badge variant="secondary" className="rounded-full bg-white/14 px-3 py-1 text-white hover:bg-white/14">
+                          {product.storeName}
+                        </Badge>
+                        <div className="rounded-full bg-white px-3 py-1 text-sm font-semibold text-foreground shadow-sm">
+                          {product.price}
+                        </div>
+                      </div>
+                    </div>
+
+                    <CardContent className="flex h-[calc(100%-12rem)] flex-col gap-4 p-5">
+                      <div className="space-y-2">
+                        <p className="line-clamp-2 text-lg font-semibold tracking-tight">{product.name}</p>
+                        <p className="line-clamp-3 text-sm leading-6 text-muted-foreground">{product.description}</p>
+                      </div>
+
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <ShieldCheck className="size-4" />
+                        <span>{product.city || 'Cobertura publicada'}</span>
+                      </div>
+
+                      {!product.isFallback ? (
+                        <div className="mt-auto flex flex-wrap gap-2">
+                          <Button asChild className="rounded-full">
+                            <Link to={`/productos/${product.id}`}>Ver publicación</Link>
+                          </Button>
+                          <Button asChild variant="outline" className="rounded-full">
+                            <Link to={`/proveedores/${product.storeId}`}>Ver tienda</Link>
+                          </Button>
+                        </div>
+                      ) : null}
+                    </CardContent>
+                  </Card>
+                </SwiperSlide>
+              ))}
+            </Swiper>
+          )}
+        </section>
+
+        <section id="acceso" className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+          <Card className="border-border/60 bg-card/90 shadow-sm">
+            <CardContent className="flex flex-col gap-4 p-6 lg:flex-row lg:items-center lg:justify-between lg:p-8">
+              <div className="space-y-2">
+                <p className="text-sm font-semibold uppercase tracking-[0.16em] text-muted-foreground">Acceso</p>
+                <h3 className="text-2xl font-semibold tracking-tight">
+                  {authUser ? 'Tu sesión está activa' : 'Ingresa o crea tu cuenta para publicar y operar'}
+                </h3>
+                <p className="max-w-2xl text-sm leading-6 text-muted-foreground sm:text-base">
+                  {authUser
+                    ? 'Puedes ir directo a tu panel y continuar con tus flujos de proveedor o comprador.'
+                    : 'La portada quedó más limpia, pero el acceso a la plataforma sigue disponible cuando lo necesites.'}
                 </p>
               </div>
 
-              <div className="grid gap-4 sm:grid-cols-2">
-                {benefits.map(({ title, description, icon: Icon }) => (
-                  <Card key={title} className="border-border/60 bg-background/80 shadow-none">
-                    <CardContent className="space-y-3 p-5">
-                      <div className="flex size-10 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-                        <Icon className="size-5" />
-                      </div>
-                      <div className="space-y-1.5">
-                        <p className="font-medium tracking-tight">{title}</p>
-                        <p className="text-sm leading-6 text-muted-foreground">{description}</p>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </section>
-
-        <section id="productos" className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
-          <div className="mb-6 space-y-3">
-            <Badge variant="outline" className="rounded-full px-3 py-1">
-              Productos destacados
-            </Badge>
-            <h2 className="text-3xl font-semibold tracking-tight sm:text-4xl">
-              Navega por los frentes mas buscados del marketplace
-            </h2>
-          </div>
-
-          <Card className="border-border/60 bg-card/80 shadow-sm">
-            <CardContent className="space-y-6 p-6 sm:p-8">
               <div className="flex flex-wrap gap-2">
-                {productTags.map((tag) => (
-                  <Badge key={tag} variant="secondary" className="rounded-full px-3 py-1 text-sm">
-                    {tag}
-                  </Badge>
-                ))}
-              </div>
-
-              <Separator />
-
-              <div className="grid auto-rows-[110px] gap-4 md:grid-cols-12">
-                {products.map((product) => (
-                  <Card
-                    key={product.title}
-                    className={`relative overflow-hidden border-0 text-white shadow-lg ${product.className}`}
-                  >
-                    <CardContent className="flex h-full items-end p-5 sm:p-6">
-                      <div className="space-y-2">
-                        <div className="flex size-10 items-center justify-center rounded-xl bg-white/15 backdrop-blur">
-                          <PackageSearch className="size-4" />
-                        </div>
-                        <p className="text-lg font-semibold tracking-tight">{product.title}</p>
-                        <p className="max-w-sm text-sm leading-6 text-white/80">{product.description}</p>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
+                {authUser ? (
+                  <>
+                    <Button asChild className="rounded-full px-5">
+                      <a href={routeForUser(authUser)}>Ir a mi panel</a>
+                    </Button>
+                    <Button variant="outline" className="rounded-full px-5" onClick={handleLogout}>
+                      Salir
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <Button variant="outline" className="rounded-full px-5" onClick={() => openAuth('login')}>
+                      Ingresar
+                    </Button>
+                    <Button className="rounded-full px-5" onClick={() => openAuth('register')}>
+                      Registrarme
+                    </Button>
+                  </>
+                )}
               </div>
             </CardContent>
           </Card>
         </section>
 
-        <section className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-          <Card className="border-border/60 bg-muted/30 shadow-none">
-            <CardContent className="flex flex-wrap items-center justify-between gap-4 px-6 py-5 text-sm font-semibold uppercase tracking-[0.24em] text-muted-foreground sm:px-8">
-              {brands.map((brand) => (
-                <span key={brand}>{brand}</span>
-              ))}
-            </CardContent>
-          </Card>
-        </section>
+        {showAuth || authUser ? (
+          <AuthSection
+            activeTab={authTab}
+            onTabChange={setAuthTab}
+            user={authUser}
+            authReady={authReady}
+            onAuthSuccess={handleAuthSuccess}
+            onLogout={handleLogout}
+          />
+        ) : null}
       </main>
 
       <footer id="contacto" className="border-t border-border/70 bg-background/95">
-        <div className="mx-auto grid max-w-7xl gap-6 px-4 py-8 sm:px-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.9fr)_320px] lg:px-8">
-          <Card className="border-border/60 bg-card/80 shadow-sm">
+        <div className="mx-auto grid max-w-7xl gap-6 px-4 py-10 sm:px-6 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.9fr)_300px] lg:px-8">
+          <Card className="border-border/60 bg-card/90 shadow-sm">
             <CardContent className="space-y-5 p-6">
               <div className="flex items-center gap-3">
                 <div className="flex size-11 items-center justify-center rounded-2xl bg-primary text-primary-foreground">
-                  <HardHat className="size-5" />
+                  <Blocks className="size-5" />
                 </div>
                 <div>
                   <p className="font-semibold tracking-tight">GestorObras</p>
-                  <p className="text-sm text-muted-foreground">Gestion de compras para construccion</p>
+                  <p className="text-sm text-muted-foreground">Marketplace de servicios para construcción</p>
                 </div>
               </div>
               <p className="max-w-xl text-sm leading-6 text-muted-foreground">
-                Plataforma para coordinar compras, proveedores y ejecucion operativa en proyectos de
-                construccion y mantenimiento.
+                Portada simplificada para descubrir categorías, tiendas y publicaciones activas sin sobrecargar la experiencia inicial.
               </p>
               <div className="flex flex-wrap gap-2">
                 <Badge variant="secondary" className="rounded-full px-3 py-1">
-                  1,000+ proveedores validados
+                  Servicios publicados
                 </Badge>
                 <Badge variant="secondary" className="rounded-full px-3 py-1">
-                  Comparativos por partida
+                  Tiendas destacadas
                 </Badge>
               </div>
             </CardContent>
           </Card>
 
-          <Card className="border-border/60 bg-card/80 shadow-sm">
+          <Card className="border-border/60 bg-card/90 shadow-sm">
             <CardContent className="grid gap-6 p-6 sm:grid-cols-2">
               {footerGroups.map((group) => (
                 <div key={group.title} className="space-y-4">
                   <p className="text-sm font-semibold tracking-tight">{group.title}</p>
                   <div className="grid gap-3 text-sm text-muted-foreground">
                     {group.links.map((link) => (
-                      <a key={link} className="transition-colors hover:text-foreground" href="#contacto">
+                      <a key={link} className="transition-colors hover:text-foreground" href="#inicio">
                         {link}
                       </a>
                     ))}
@@ -806,58 +1029,30 @@ function App() {
             </CardContent>
           </Card>
 
-          <div className="grid gap-4">
-            <Card className="border-border/60 bg-card/80 shadow-sm">
-              <CardHeader>
-                <CardTitle className="text-lg">Contacto</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex items-start gap-3 text-sm">
-                  <Mail className="mt-0.5 size-4 text-primary" />
-                  <div>
-                    <p className="text-muted-foreground">Correo</p>
-                    <a className="font-medium transition-colors hover:text-primary" href="mailto:contacto@gestorobras.com">
-                      contacto@gestorobras.com
-                    </a>
-                  </div>
+          <Card className="border-border/60 bg-card/90 shadow-sm">
+            <CardHeader>
+              <CardTitle className="text-lg">Contacto</CardTitle>
+              <CardDescription>Canales básicos del marketplace.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4 text-sm">
+              <div className="flex items-start gap-3">
+                <Mail className="mt-0.5 size-4 text-primary" />
+                <div>
+                  <p className="text-muted-foreground">Correo</p>
+                  <a className="font-medium transition-colors hover:text-primary" href="mailto:contacto@gestorobras.com">
+                    contacto@gestorobras.com
+                  </a>
                 </div>
-                <div className="flex items-start gap-3 text-sm">
-                  <Phone className="mt-0.5 size-4 text-primary" />
-                  <div>
-                    <p className="text-muted-foreground">Telefono</p>
-                    <a className="font-medium transition-colors hover:text-primary" href="tel:+525500000000">
-                      +52 55 0000 0000
-                    </a>
-                  </div>
+              </div>
+              <div className="flex items-start gap-3">
+                <MapPin className="mt-0.5 size-4 text-primary" />
+                <div>
+                  <p className="text-muted-foreground">Ubicación</p>
+                  <p className="font-medium">Latam</p>
                 </div>
-                <div className="flex items-start gap-3 text-sm">
-                  <MapPin className="mt-0.5 size-4 text-primary" />
-                  <div>
-                    <p className="text-muted-foreground">Ubicacion</p>
-                    <p className="font-medium">Ciudad de Mexico, MX</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="border-primary/20 bg-primary/5 shadow-sm">
-              <CardContent className="space-y-4 p-6">
-                <Badge variant="secondary" className="w-fit rounded-full px-3 py-1">
-                  Siguiente paso
-                </Badge>
-                <div className="space-y-2">
-                  <p className="text-xl font-semibold tracking-tight">Listo para centralizar tus compras de obra</p>
-                  <p className="text-sm leading-6 text-muted-foreground">
-                    Agenda una demo y revisa como ordenar requisiciones, comparativos y seguimiento de
-                    proveedores en un solo flujo.
-                  </p>
-                </div>
-                <Button asChild className="h-11 w-full rounded-full">
-                  <a href="#inicio">Volver arriba</a>
-                </Button>
-              </CardContent>
-            </Card>
-          </div>
+              </div>
+            </CardContent>
+          </Card>
         </div>
 
         <div className="mx-auto flex max-w-7xl flex-col gap-3 border-t border-border/70 px-4 py-5 text-sm text-muted-foreground sm:px-6 md:flex-row md:items-center md:justify-between lg:px-8">
@@ -867,7 +1062,7 @@ function App() {
               Privacidad
             </a>
             <a className="transition-colors hover:text-foreground" href="#contacto">
-              Terminos
+              Términos
             </a>
             <a className="transition-colors hover:text-foreground" href="#contacto">
               Soporte

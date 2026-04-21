@@ -1,0 +1,45 @@
+<svg width="1600" height="720" viewBox="0 0 1600 720" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="138" y1="102" x2="1470" y2="654" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0E1520"/>
+      <stop offset="0.48" stop-color="#203248"/>
+      <stop offset="1" stop-color="#071018"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(1224 336) rotate(90) scale(308 368)">
+      <stop stop-color="#FF9B3D" stop-opacity="0.56"/>
+      <stop offset="1" stop-color="#FF9B3D" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="panel" x1="1055" y1="148" x2="1391" y2="596" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#1B2837"/>
+      <stop offset="1" stop-color="#111A25"/>
+    </linearGradient>
+  </defs>
+  <rect width="1600" height="720" rx="36" fill="url(#bg)"/>
+  <circle cx="1290" cy="326" r="320" fill="url(#glow)"/>
+  <circle cx="1470" cy="150" r="120" fill="#5F7DA2" fill-opacity="0.16"/>
+  <path d="M1014 78H1454C1478.3 78 1498 97.6995 1498 122V598C1498 622.301 1478.3 642 1454 642H1058C1033.7 642 1014 622.301 1014 598V78Z" fill="url(#panel)"/>
+  <rect x="1056" y="126" width="220" height="94" rx="28" fill="#0B121A"/>
+  <rect x="1084" y="154" width="164" height="18" rx="9" fill="#334A63"/>
+  <rect x="1084" y="186" width="118" height="18" rx="9" fill="#334A63"/>
+  <rect x="1298" y="126" width="150" height="94" rx="28" fill="#FF7D22"/>
+  <text x="1330" y="183" fill="#FFF8F2" font-family="Arial, Helvetica, sans-serif" font-size="30" font-weight="700">24H</text>
+  <rect x="1060" y="256" width="390" height="310" rx="38" fill="#0B121A"/>
+  <rect x="1100" y="300" width="140" height="42" rx="21" fill="#162130"/>
+  <rect x="1258" y="300" width="140" height="42" rx="21" fill="#162130"/>
+  <rect x="1100" y="364" width="298" height="148" rx="26" fill="#162130"/>
+  <rect x="1128" y="392" width="242" height="16" rx="8" fill="#32485E"/>
+  <rect x="1128" y="426" width="210" height="16" rx="8" fill="#32485E"/>
+  <rect x="1128" y="460" width="180" height="16" rx="8" fill="#32485E"/>
+  <circle cx="1334" cy="446" r="40" fill="#FF7D22"/>
+  <path d="M1300 544H1462V596C1462 612.569 1448.57 626 1432 626H1330C1313.43 626 1300 612.569 1300 596V544Z" fill="#F18532"/>
+  <path d="M1288 540C1288 519.013 1305.01 502 1326 502H1436C1456.99 502 1474 519.013 1474 540V554H1288V540Z" fill="#172230"/>
+  <path d="M1378 242C1421.08 242 1456 207.078 1456 164C1456 120.922 1421.08 86 1378 86C1334.92 86 1300 120.922 1300 164C1300 207.078 1334.92 242 1378 242Z" fill="#FFF6EC" fill-opacity="0.82"/>
+  <path d="M1344 160C1344 141.222 1359.22 126 1378 126C1396.78 126 1412 141.222 1412 160V198H1344V160Z" fill="#0F1822"/>
+  <rect x="1332" y="194" width="96" height="28" rx="14" fill="#FF7D22"/>
+  <path d="M1218 522L1248 454H1208L1242 380" stroke="#FFB15C" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M938 198C1060 240 1082 346 1188 358" stroke="#FF8B34" stroke-width="12" stroke-linecap="round"/>
+  <path d="M888 292C1014 320 1076 470 1180 474" stroke="#5D7690" stroke-width="10" stroke-linecap="round"/>
+  <path d="M866 394C986 394 1026 556 1172 576" stroke="#FF8B34" stroke-width="12" stroke-linecap="round"/>
+  <rect x="1048" y="70" width="278" height="48" rx="24" fill="#FF7D22" fill-opacity="0.92"/>
+  <text x="1088" y="101" fill="#FFF9F3" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="700">SERVICIO ELECTRICO</text>
+</svg>

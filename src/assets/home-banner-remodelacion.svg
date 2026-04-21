@@ -1,0 +1,53 @@
+<svg width="1600" height="720" viewBox="0 0 1600 720" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="177" y1="60" x2="1431" y2="665" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#B9936F"/>
+      <stop offset="0.5" stop-color="#E8D1BA"/>
+      <stop offset="1" stop-color="#7E5C47"/>
+    </linearGradient>
+    <linearGradient id="card" x1="1136" y1="122" x2="1418" y2="599" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFF6EC"/>
+      <stop offset="1" stop-color="#E9D5C1"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="1075" y1="216" x2="1337" y2="515" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FF8B34"/>
+      <stop offset="1" stop-color="#E56B11"/>
+    </linearGradient>
+  </defs>
+  <rect width="1600" height="720" rx="36" fill="url(#bg)"/>
+  <circle cx="1316" cy="162" r="180" fill="#FFF9F1" fill-opacity="0.22"/>
+  <circle cx="1458" cy="573" r="204" fill="#221813" fill-opacity="0.14"/>
+  <path d="M737 0H1600V720H578L737 0Z" fill="#F7ECDF" fill-opacity="0.18"/>
+  <path d="M912 72H1490C1512.09 72 1530 89.9086 1530 112V610C1530 632.091 1512.09 650 1490 650H986C963.909 650 946 632.091 946 610V106L912 72Z" fill="url(#card)"/>
+  <rect x="990" y="162" width="476" height="28" rx="14" fill="#E5C7AE"/>
+  <rect x="990" y="210" width="412" height="22" rx="11" fill="#E8D2BF"/>
+  <rect x="990" y="514" width="474" height="104" rx="28" fill="#FFF8F2" fill-opacity="0.92"/>
+  <rect x="1016" y="542" width="116" height="48" rx="24" fill="#F6E6D8"/>
+  <rect x="1150" y="542" width="116" height="48" rx="24" fill="#F6E6D8"/>
+  <rect x="1284" y="542" width="154" height="48" rx="24" fill="url(#accent)"/>
+  <rect x="1030" y="334" width="274" height="136" rx="30" fill="#FBF1E7"/>
+  <rect x="1218" y="124" width="216" height="112" rx="28" fill="#2F241E" fill-opacity="0.08"/>
+  <rect x="1238" y="144" width="176" height="18" rx="9" fill="#D8B89C"/>
+  <rect x="1238" y="176" width="120" height="18" rx="9" fill="#D8B89C"/>
+  <circle cx="1088" cy="402" r="38" fill="#FFEEE1"/>
+  <circle cx="1192" cy="402" r="38" fill="#FFEEE1"/>
+  <circle cx="1296" cy="402" r="38" fill="#FFEEE1"/>
+  <rect x="968" y="624" width="496" height="12" rx="6" fill="#A97F62" fill-opacity="0.3"/>
+  <path d="M1032 314L1136 240L1202 296V470H1032V314Z" fill="#FFF7EF"/>
+  <path d="M1118 240L1194 294H1040L1118 240Z" fill="#C88950"/>
+  <rect x="1061" y="336" width="48" height="58" rx="10" fill="#E7B587"/>
+  <rect x="1127" y="336" width="48" height="58" rx="10" fill="#E7B587"/>
+  <rect x="1084" y="404" width="66" height="66" rx="14" fill="#7B5A47"/>
+  <path d="M1223 260H1413V480H1223V260Z" fill="#221B17" fill-opacity="0.08"/>
+  <rect x="1246" y="292" width="76" height="112" rx="22" fill="#FF7E24"/>
+  <rect x="1334" y="292" width="56" height="112" rx="22" fill="#6B4E3D"/>
+  <path d="M1325 226C1367.53 226 1402 191.526 1402 149C1402 106.474 1367.53 72 1325 72C1282.47 72 1248 106.474 1248 149C1248 191.526 1282.47 226 1325 226Z" fill="#FFF2E6" fill-opacity="0.72"/>
+  <path d="M1294 141C1294 123.327 1308.33 109 1326 109C1343.67 109 1358 123.327 1358 141V177H1294V141Z" fill="#2C211B"/>
+  <rect x="1282" y="174" width="90" height="30" rx="15" fill="#FF7E24"/>
+  <path d="M1274 468H1436V516C1436 534.778 1420.78 550 1402 550H1308C1289.22 550 1274 534.778 1274 516V468Z" fill="#C97A44"/>
+  <path d="M1264 464C1264 445.222 1279.22 430 1298 430H1410C1428.78 430 1444 445.222 1444 464V478H1264V464Z" fill="#412E24"/>
+  <rect x="1086" y="150" width="210" height="70" rx="35" fill="#FFF8F2" fill-opacity="0.88"/>
+  <text x="1121" y="194" fill="#7D5436" font-family="Arial, Helvetica, sans-serif" font-size="28" font-weight="700">REMODELACION</text>
+  <rect x="1068" y="88" width="248" height="46" rx="23" fill="#2F241E" fill-opacity="0.18"/>
+  <text x="1102" y="118" fill="#FFFDF9" font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="700">PROMO DE INTERIORES</text>
+</svg>
