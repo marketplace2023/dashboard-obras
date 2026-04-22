@@ -16,8 +16,10 @@ import {
   LogOut,
   PackagePlus,
   PencilLine,
+  MessageSquareMore,
   Save,
   ShieldCheck,
+  Star,
   Store,
   Upload,
   UserRound,
@@ -86,6 +88,7 @@ type DashboardSection =
   | 'computos-metricos'
   | 'profile'
   | 'catalog'
+  | 'reviews'
   | 'master-materiales'
   | 'master-equipos'
   | 'master-mano-obra'
@@ -147,6 +150,24 @@ type ProductDetail = ProductItem & {
     image_url: string
     is_cover?: number | boolean
   }>
+}
+
+type ProductReviewItem = {
+  id: string
+  reviewer_user_id: string
+  partner_id?: string | null
+  product_tmpl_id?: string | null
+  rating: string
+  title?: string | null
+  comment?: string | null
+  reply_comment?: string | null
+  reply_created_at?: string | null
+  created_at: string
+  reviewer?: {
+    id: string
+    username: string
+  } | null
+  product_name?: string | null
 }
 
 type StoreFormState = {
@@ -270,6 +291,10 @@ function ProviderDashboard({ user, token, onLogout }: ProviderDashboardProps) {
   const [storeForm, setStoreForm] = useState<StoreFormState>(defaultStoreForm)
   const [productForm, setProductForm] = useState<ProductFormState>(defaultProductForm)
   const [productImages, setProductImages] = useState<string[]>([])
+  const [productReviews, setProductReviews] = useState<ProductReviewItem[]>([])
+  const [loadingReviews, setLoadingReviews] = useState(false)
+  const [replyingReviewId, setReplyingReviewId] = useState<string | null>(null)
+  const [reviewReplies, setReviewReplies] = useState<Record<string, string>>({})
   const [editingProductId, setEditingProductId] = useState<string | null>(null)
   const [message, setMessage] = useState<MessageState>(null)
 
@@ -277,6 +302,7 @@ function ProviderDashboard({ user, token, onLogout }: ProviderDashboardProps) {
     { key: 'overview' as const, label: 'Resumen', icon: LayoutDashboard },
     { key: 'profile' as const, label: 'Perfil proveedor', icon: UserRound },
     { key: 'catalog' as const, label: 'Productos y servicios', icon: PackagePlus },
+    { key: 'reviews' as const, label: 'Reseñas', icon: MessageSquareMore },
   ]
 
   const verificationLabel = useMemo(() => {
@@ -302,6 +328,7 @@ function ProviderDashboard({ user, token, onLogout }: ProviderDashboardProps) {
       'computos-metricos',
       'profile',
       'catalog',
+      'reviews',
       'master-materiales',
       'master-equipos',
       'master-mano-obra',
@@ -387,6 +414,24 @@ function ProviderDashboard({ user, token, onLogout }: ProviderDashboardProps) {
     )
 
     setProducts(data.data ?? [])
+  }
+
+  async function loadProductReviews() {
+    setLoadingReviews(true)
+
+    try {
+      const data = await parseApiResponse<{ data: ProductReviewItem[] }>(
+        await fetch(`${API_BASE_URL}/ratings?partner_id=${user.partner_id}&limit=100`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+      )
+
+      setProductReviews(data.data ?? [])
+    } catch (error) {
+      setMessage({ tone: 'error', text: error instanceof Error ? error.message : 'No se pudieron cargar las reseñas.' })
+    } finally {
+      setLoadingReviews(false)
+    }
   }
 
   function resetProductComposer() {
@@ -675,6 +720,50 @@ function ProviderDashboard({ user, token, onLogout }: ProviderDashboardProps) {
   function navigateSection(section: DashboardSection) {
     setActiveSection(section)
   }
+
+  function formatReviewDate(value?: string | null) {
+    if (!value) return 'Fecha no disponible'
+    const date = new Date(value)
+    if (Number.isNaN(date.getTime())) return 'Fecha no disponible'
+    return new Intl.DateTimeFormat('es-MX', { dateStyle: 'medium' }).format(date)
+  }
+
+  async function handleReplyReview(reviewId: string) {
+    const comment = (reviewReplies[reviewId] ?? '').trim()
+    if (comment.length < 2) {
+      setMessage({ tone: 'error', text: 'La respuesta debe tener al menos 2 caracteres.' })
+      return
+    }
+
+    setReplyingReviewId(reviewId)
+    setMessage(null)
+
+    try {
+      await parseApiResponse(
+        await fetch(`${API_BASE_URL}/ratings/${reviewId}/reply`, {
+          method: 'PATCH',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+            'x-store-context': user.partner_id,
+          },
+          body: JSON.stringify({ comment }),
+        }),
+      )
+
+      await loadProductReviews()
+      setMessage({ tone: 'success', text: 'Respuesta enviada correctamente.' })
+    } catch (error) {
+      setMessage({ tone: 'error', text: error instanceof Error ? error.message : 'No se pudo responder la reseña.' })
+    } finally {
+      setReplyingReviewId(null)
+    }
+  }
+
+  useEffect(() => {
+    if (loading || activeSection !== 'reviews') return
+    void loadProductReviews()
+  }, [activeSection, loading])
 
   return (
     <SidebarProvider>
@@ -1474,6 +1563,82 @@ function ProviderDashboard({ user, token, onLogout }: ProviderDashboardProps) {
                   </CardContent>
                 </Card>
               </div>
+            ) : null}
+
+            {!loading && activeSection === 'reviews' ? (
+              <Card className="border-border/60 bg-card/90 shadow-sm">
+                <CardHeader>
+                  <CardTitle>Reseñas de productos</CardTitle>
+                  <CardDescription>Los customers dejan reseñas en la página pública del producto y tú puedes responderlas desde aquí.</CardDescription>
+                </CardHeader>
+                <CardContent className="grid gap-4">
+                  {loadingReviews ? (
+                    <div className="rounded-2xl border border-dashed border-border bg-muted/20 px-4 py-8 text-center text-sm text-muted-foreground">
+                      Cargando reseñas...
+                    </div>
+                  ) : productReviews.length === 0 ? (
+                    <div className="rounded-2xl border border-dashed border-border bg-muted/20 px-4 py-8 text-center text-sm text-muted-foreground">
+                      Aun no has recibido reseñas en tus productos.
+                    </div>
+                  ) : (
+                    productReviews.map((review) => (
+                      <div key={review.id} className="rounded-2xl border border-border/70 bg-background/80 p-4">
+                        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                          <div className="space-y-2">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <p className="text-lg font-semibold tracking-tight">{review.title || review.product_name || 'Reseña de producto'}</p>
+                              <Badge variant="outline" className="rounded-full px-3 py-1">
+                                {review.rating} / 5
+                              </Badge>
+                            </div>
+                            <div className="flex flex-wrap gap-x-4 gap-y-2 text-sm text-muted-foreground">
+                              <span>Producto: {review.product_name || 'Sin nombre'}</span>
+                              <span>Cliente: {review.reviewer?.username || 'Usuario'}</span>
+                              <span>Fecha: {formatReviewDate(review.created_at)}</span>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1 text-primary">
+                            {Array.from({ length: 5 }).map((_, index) => (
+                              <Star key={`${review.id}-${index}`} className={`size-4 ${index < Number(review.rating) ? 'fill-current' : ''}`} />
+                            ))}
+                          </div>
+                        </div>
+
+                        <p className="mt-4 text-sm leading-7 text-muted-foreground">{review.comment || 'Sin comentario adicional.'}</p>
+
+                        {review.reply_comment ? (
+                          <div className="mt-4 rounded-2xl border border-primary/15 bg-primary/5 px-4 py-4">
+                            <p className="text-sm font-medium">Tu respuesta</p>
+                            <p className="mt-1 text-xs text-muted-foreground">{formatReviewDate(review.reply_created_at)}</p>
+                            <p className="mt-3 text-sm leading-7 text-muted-foreground">{review.reply_comment}</p>
+                          </div>
+                        ) : (
+                          <div className="mt-4 grid gap-3 rounded-2xl border border-border/60 bg-muted/15 p-4">
+                            <Label htmlFor={`review-reply-${review.id}`}>Responder reseña</Label>
+                            <Textarea
+                              id={`review-reply-${review.id}`}
+                              value={reviewReplies[review.id] ?? ''}
+                              onChange={(event) => setReviewReplies((current) => ({ ...current, [review.id]: event.target.value }))}
+                              placeholder="Escribe una respuesta profesional para el customer"
+                              rows={4}
+                            />
+                            <div className="flex justify-end">
+                              <Button
+                                type="button"
+                                className="rounded-full px-5"
+                                disabled={replyingReviewId === review.id}
+                                onClick={() => void handleReplyReview(review.id)}
+                              >
+                                {replyingReviewId === review.id ? 'Respondiendo...' : 'Responder'}
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ))
+                  )}
+                </CardContent>
+              </Card>
             ) : null}
             </div>
           </div>

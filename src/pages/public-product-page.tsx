@@ -1,6 +1,6 @@
 import * as Dialog from '@radix-ui/react-dialog'
 import { useEffect, useState, type ReactNode } from 'react'
-import { ArrowLeft, BadgeCheck, ChevronLeft, ChevronRight, Clock3, ExternalLink, ImageIcon, MapPin, PackageSearch, ShieldCheck, Store, Truck, Wrench, X } from 'lucide-react'
+import { ArrowLeft, BadgeCheck, ChevronLeft, ChevronRight, Clock3, ExternalLink, ImageIcon, MapPin, PackageSearch, ShieldCheck, Star, Store, Truck, Wrench, X } from 'lucide-react'
 import { Link, useParams } from 'react-router-dom'
 import { Autoplay, Pagination } from 'swiper/modules'
 import { Swiper, SwiperSlide } from 'swiper/react'
@@ -10,7 +10,28 @@ import 'swiper/css/pagination'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { fetchPublicProduct, fetchPublicStore, formatEntityTypeLabel, formatPrice, type PublicProduct, type PublicStore } from '@/lib/public-marketplace'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
+import { API_BASE_URL, AUTH_STORAGE_KEY, type AuthUser } from '@/lib/auth'
+import { fetchProductReviews, fetchPublicProduct, fetchPublicStore, formatEntityTypeLabel, formatPrice, type ProductReview, type PublicProduct, type PublicStore } from '@/lib/public-marketplace'
+
+type ReviewFormState = {
+  rating: number
+  title: string
+  comment: string
+}
+
+type MessageState = {
+  tone: 'success' | 'error'
+  text: string
+} | null
+
+const defaultReviewForm: ReviewFormState = {
+  rating: 5,
+  title: '',
+  comment: '',
+}
 
 function toBoolean(value: unknown) {
   return value === true || value === 1 || value === '1'
@@ -45,13 +66,78 @@ function TrustRow({ icon, label, value }: { icon: ReactNode; label: string; valu
   )
 }
 
+async function parseApiResponse<T>(response: Response): Promise<T> {
+  const contentType = response.headers.get('content-type') ?? ''
+  const data = contentType.includes('application/json') ? await response.json() : await response.text()
+
+  if (!response.ok) {
+    const message = typeof data === 'string' ? data : Array.isArray(data?.message) ? data.message[0] : data?.message
+    throw new Error(message || 'No se pudo completar la solicitud')
+  }
+
+  return data as T
+}
+
+function formatReviewDate(value?: string | null) {
+  if (!value) return 'Fecha no disponible'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return 'Fecha no disponible'
+  return new Intl.DateTimeFormat('es-MX', { dateStyle: 'medium' }).format(date)
+}
+
 function PublicProductPage() {
   const { id = '' } = useParams()
   const [product, setProduct] = useState<PublicProduct | null>(null)
   const [storeData, setStoreData] = useState<PublicStore | null>(null)
+  const [authUser, setAuthUser] = useState<AuthUser | null>(null)
+  const [authToken, setAuthToken] = useState<string | null>(null)
+  const [reviews, setReviews] = useState<ProductReview[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [selectedImageIndex, setSelectedImageIndex] = useState<number | null>(null)
+  const [reviewsLoading, setReviewsLoading] = useState(true)
+  const [submittingReview, setSubmittingReview] = useState(false)
+  const [reviewMessage, setReviewMessage] = useState<MessageState>(null)
+  const [reviewForm, setReviewForm] = useState<ReviewFormState>(defaultReviewForm)
+
+  useEffect(() => {
+    const storedToken = window.localStorage.getItem(AUTH_STORAGE_KEY)
+
+    if (!storedToken) {
+      setAuthToken(null)
+      setAuthUser(null)
+      return
+    }
+
+    let active = true
+
+    async function hydrateSession() {
+      try {
+        const user = await parseApiResponse<AuthUser>(
+          await fetch(`${API_BASE_URL}/auth/me`, {
+            headers: {
+              Authorization: `Bearer ${storedToken}`,
+            },
+          }),
+        )
+
+        if (!active) return
+        setAuthToken(storedToken)
+        setAuthUser(user)
+      } catch {
+        if (!active) return
+        window.localStorage.removeItem(AUTH_STORAGE_KEY)
+        setAuthToken(null)
+        setAuthUser(null)
+      }
+    }
+
+    void hydrateSession()
+
+    return () => {
+      active = false
+    }
+  }, [])
 
   useEffect(() => {
     let active = true
@@ -77,6 +163,36 @@ function PublicProductPage() {
     }
 
     void loadProduct()
+
+    return () => {
+      active = false
+    }
+  }, [id])
+
+  useEffect(() => {
+    let active = true
+
+    async function loadReviews() {
+      try {
+        setReviewsLoading(true)
+        const payload = await fetchProductReviews(id, 20)
+        if (!active) return
+        setReviews(payload.data ?? [])
+      } catch {
+        if (!active) return
+        setReviews([])
+      } finally {
+        if (active) setReviewsLoading(false)
+      }
+    }
+
+    if (!id) {
+      setReviews([])
+      setReviewsLoading(false)
+      return
+    }
+
+    void loadReviews()
 
     return () => {
       active = false
@@ -128,6 +244,9 @@ function PublicProductPage() {
     product.listing_type === 'product' ? 'Producto' : 'Servicio',
     materialsIncluded ? 'Incluye materiales' : 'Materiales por definir',
   ]
+  const ratingAverage = Number(product.rating_avg ?? 0)
+  const canReview = authUser?.role === 'consumer' && Boolean(authToken)
+  const existingReview = reviews.find((review) => review.reviewer_user_id === authUser?.id) ?? null
 
   const selectedGalleryImage = selectedImageIndex != null ? galleryImages[selectedImageIndex] : null
 
@@ -147,6 +266,55 @@ function PublicProductPage() {
   function showNextImage() {
     if (galleryImages.length <= 1 || selectedImageIndex == null) return
     setSelectedImageIndex((selectedImageIndex + 1) % galleryImages.length)
+  }
+
+  async function refreshReviews() {
+    const payload = await fetchProductReviews(id, 20)
+    setReviews(payload.data ?? [])
+  }
+
+  async function handleCreateReview(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+
+    if (!product) {
+      setReviewMessage({ tone: 'error', text: 'Producto no disponible para reseñar.' })
+      return
+    }
+
+    if (!authToken) {
+      setReviewMessage({ tone: 'error', text: 'Debes iniciar sesión como customer para dejar una reseña.' })
+      return
+    }
+
+    setSubmittingReview(true)
+    setReviewMessage(null)
+
+    try {
+      await parseApiResponse(
+        await fetch(`${API_BASE_URL}/ratings`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${authToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            product_tmpl_id: product.id,
+            partner_id: storeData?.id ?? product.partner_id,
+            rating: reviewForm.rating,
+            title: reviewForm.title || undefined,
+            comment: reviewForm.comment || undefined,
+          }),
+        }),
+      )
+
+      await refreshReviews()
+      setReviewForm(defaultReviewForm)
+      setReviewMessage({ tone: 'success', text: 'Reseña enviada correctamente.' })
+    } catch (submitError) {
+      setReviewMessage({ tone: 'error', text: submitError instanceof Error ? submitError.message : 'No se pudo enviar la reseña.' })
+    } finally {
+      setSubmittingReview(false)
+    }
   }
 
   return (
@@ -232,6 +400,13 @@ function PublicProductPage() {
                   <p className="text-sm leading-7 text-muted-foreground sm:text-base">
                     {product.description_sale || 'Este producto o servicio no tiene una descripción pública detallada todavía.'}
                   </p>
+                  <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-border/60 bg-muted/20 px-4 py-3 text-sm">
+                    <div className="flex items-center gap-2 font-medium text-foreground">
+                      <Star className="size-4 fill-current text-primary" />
+                      {ratingAverage > 0 ? ratingAverage.toFixed(1) : 'Sin calificación'}
+                    </div>
+                    <span className="text-muted-foreground">{reviews.length} reseñas publicadas</span>
+                  </div>
                 </CardContent>
               </Card>
 
@@ -272,6 +447,135 @@ function PublicProductPage() {
                   </CardContent>
                 </Card>
               ) : null}
+
+              <Card className="border-border/60 bg-card/90 shadow-sm">
+                <CardHeader>
+                  <CardTitle>Reseñas del producto</CardTitle>
+                  <CardDescription>Los customers pueden dejar su experiencia y la tienda puede responder desde su panel.</CardDescription>
+                </CardHeader>
+                <CardContent className="grid gap-6">
+                  <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-border/60 bg-muted/20 px-4 py-4">
+                    <div className="flex items-center gap-2 text-lg font-semibold text-foreground">
+                      <Star className="size-5 fill-current text-primary" />
+                      {ratingAverage > 0 ? ratingAverage.toFixed(1) : 'Sin calificación'}
+                    </div>
+                    <p className="text-sm text-muted-foreground">{reviews.length} reseñas registradas para esta publicación.</p>
+                  </div>
+
+                  {canReview && !existingReview ? (
+                    <form className="grid gap-4 rounded-2xl border border-border/60 bg-background/70 p-4" onSubmit={handleCreateReview}>
+                      <div className="space-y-1">
+                        <p className="font-medium">Deja tu reseña</p>
+                        <p className="text-sm text-muted-foreground">Comparte tu experiencia como customer con esta publicación.</p>
+                      </div>
+
+                      {reviewMessage ? (
+                        <div className={`rounded-2xl border px-4 py-3 text-sm ${reviewMessage.tone === 'error' ? 'border-destructive/20 bg-destructive/10 text-destructive' : 'border-primary/20 bg-primary/10 text-foreground'}`}>
+                          {reviewMessage.text}
+                        </div>
+                      ) : null}
+
+                      <div className="grid gap-2 sm:max-w-[220px]">
+                        <Label htmlFor="review-rating">Calificación</Label>
+                        <select
+                          id="review-rating"
+                          className="border-input bg-background focus-visible:border-ring focus-visible:ring-ring/50 flex h-10 w-full rounded-xl border px-3 py-2 text-sm outline-none focus-visible:ring-3"
+                          value={reviewForm.rating}
+                          onChange={(event) => setReviewForm((current) => ({ ...current, rating: Number(event.target.value) }))}
+                        >
+                          {[5, 4, 3, 2, 1].map((value) => (
+                            <option key={value} value={value}>
+                              {value} estrella{value === 1 ? '' : 's'}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="grid gap-2">
+                        <Label htmlFor="review-title">Título</Label>
+                        <Input
+                          id="review-title"
+                          value={reviewForm.title}
+                          onChange={(event) => setReviewForm((current) => ({ ...current, title: event.target.value }))}
+                          placeholder="Resumen corto de tu experiencia"
+                        />
+                      </div>
+
+                      <div className="grid gap-2">
+                        <Label htmlFor="review-comment">Comentario</Label>
+                        <Textarea
+                          id="review-comment"
+                          value={reviewForm.comment}
+                          onChange={(event) => setReviewForm((current) => ({ ...current, comment: event.target.value }))}
+                          placeholder="Cuenta cómo fue el servicio, tiempos, atención y resultado"
+                          rows={5}
+                        />
+                      </div>
+
+                      <div className="flex justify-end">
+                        <Button type="submit" className="rounded-full px-5" disabled={submittingReview}>
+                          {submittingReview ? 'Enviando...' : 'Publicar reseña'}
+                        </Button>
+                      </div>
+                    </form>
+                  ) : canReview && existingReview ? (
+                    <div className="rounded-2xl border border-border/60 bg-muted/20 px-4 py-4 text-sm text-muted-foreground">
+                      Ya dejaste una reseña para este producto.
+                    </div>
+                  ) : (
+                    <div className="rounded-2xl border border-dashed border-border/60 bg-background/70 px-4 py-5 text-sm text-muted-foreground">
+                      Inicia sesión como customer para dejar una reseña en esta publicación.
+                    </div>
+                  )}
+
+                  {reviewsLoading ? (
+                    <div className="rounded-2xl border border-dashed border-border/60 bg-background/70 px-4 py-8 text-center text-sm text-muted-foreground">
+                      Cargando reseñas...
+                    </div>
+                  ) : reviews.length === 0 ? (
+                    <div className="rounded-2xl border border-dashed border-border/60 bg-background/70 px-4 py-8 text-center text-sm text-muted-foreground">
+                      Todavía no hay reseñas para esta publicación.
+                    </div>
+                  ) : (
+                    <div className="grid gap-4">
+                      {reviews.map((review) => (
+                        <div key={review.id} className="rounded-2xl border border-border/60 bg-background/70 p-4">
+                          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                            <div>
+                              <div className="flex flex-wrap items-center gap-2">
+                                <p className="font-semibold tracking-tight text-foreground">{review.title || 'Reseña de cliente'}</p>
+                                <Badge variant="outline" className="rounded-full px-3 py-1">
+                                  {review.rating} / 5
+                                </Badge>
+                              </div>
+                              <p className="mt-1 text-sm text-muted-foreground">
+                                {review.reviewer?.username || 'Cliente'} · {formatReviewDate(review.created_at)}
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-1 text-primary">
+                              {Array.from({ length: 5 }).map((_, index) => (
+                                <Star key={`${review.id}-${index}`} className={`size-4 ${index < Number(review.rating) ? 'fill-current' : ''}`} />
+                              ))}
+                            </div>
+                          </div>
+
+                          <p className="mt-4 text-sm leading-7 text-muted-foreground">{review.comment || 'Sin comentario adicional.'}</p>
+
+                          {review.reply_comment ? (
+                            <div className="mt-4 rounded-2xl border border-primary/15 bg-primary/5 px-4 py-4">
+                              <p className="text-sm font-medium text-foreground">Respuesta de la tienda</p>
+                              <p className="mt-1 text-xs text-muted-foreground">
+                                {review.replier?.username || 'Proveedor'} · {formatReviewDate(review.reply_created_at)}
+                              </p>
+                              <p className="mt-3 text-sm leading-7 text-muted-foreground">{review.reply_comment}</p>
+                            </div>
+                          ) : null}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
             </div>
 
             <div className="grid gap-6 content-start">

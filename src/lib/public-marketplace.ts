@@ -46,6 +46,7 @@ type PublicProduct = {
   name: string
   description_sale?: string | null
   list_price: string
+  rating_avg?: string | null
   currency_code?: string | null
   cover_image_url?: string | null
   vertical_type: string
@@ -67,6 +68,32 @@ type PublicProduct = {
     quote_required?: number | boolean | null
     site_visit_required?: number | boolean | null
   } | null
+}
+
+type ProductReview = {
+  id: string
+  reviewer_user_id: string
+  partner_id?: string | null
+  product_tmpl_id?: string | null
+  order_id?: string | null
+  rating: string
+  title?: string | null
+  comment?: string | null
+  status: string
+  reply_comment?: string | null
+  reply_created_at?: string | null
+  replier_user_id?: string | null
+  created_at: string
+  reviewer?: {
+    id: string
+    username: string
+  } | null
+  replier?: {
+    id: string
+    username: string
+  } | null
+  product_name?: string | null
+  partner_name?: string | null
 }
 
 type MarketplaceListing = PublicProduct & {
@@ -167,6 +194,11 @@ async function fetchPublicProduct(productId: string) {
   return parseResponse<PublicProduct>(await fetch(`${API_BASE_URL}/products/public/${productId}`))
 }
 
+async function fetchProductReviews(productId: string, limit = 20) {
+  const query = buildQuery({ product_tmpl_id: productId, limit })
+  return parseResponse<PublicListResponse<ProductReview>>(await fetch(`${API_BASE_URL}/ratings${query}`))
+}
+
 function formatEntityTypeLabel(entityType: string) {
   switch (entityType) {
     case 'contractor':
@@ -196,6 +228,7 @@ function formatPrice(value: string | number | null | undefined, currency = 'USD'
 
 export {
   fetchMarketplaceListings,
+  fetchProductReviews,
   fetchPublicProduct,
   fetchPublicStore,
   fetchPublicStoreProducts,
@@ -203,4 +236,4 @@ export {
   formatPrice,
 }
 
-export type { MarketplaceListing, PublicProduct, PublicStore }
+export type { MarketplaceListing, ProductReview, PublicProduct, PublicStore }

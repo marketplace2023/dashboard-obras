@@ -57,7 +57,7 @@ function useSessionState() {
 function ProtectedProviderRoute({ ready, token, user, onLogout }: { ready: boolean; token: string | null; user: AuthUser | null; onLogout: () => void }) {
   if (!ready) return null
   if (!token || !user) return <Navigate to="/" replace />
-  if (user.role !== 'store') return <Navigate to="/dashboard/consumer" replace />
+  if (user.role !== 'store') return <Navigate to="/" replace />
 
   return <ProviderDashboard user={user} token={token} onLogout={onLogout} />
 }

@@ -23,7 +23,7 @@ function clearStoredSession() {
 }
 
 function routeForUser(user: Pick<AuthUser, 'role'>) {
-  return user.role === 'store' ? '/dashboard/provider' : '/dashboard/consumer'
+  return user.role === 'store' ? '/dashboard/provider' : '/'
 }
 
 export { readStoredToken, fetchCurrentUser, clearStoredSession, routeForUser }

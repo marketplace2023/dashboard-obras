@@ -485,9 +485,11 @@ function App() {
                 <Badge variant="secondary" className="hidden rounded-full px-3 py-1 sm:inline-flex">
                   {authUser.role}
                 </Badge>
-                <Button asChild variant="ghost" className="hidden lg:inline-flex">
-                  <a href={routeForUser(authUser)}>Ir a mi panel</a>
-                </Button>
+                {authUser.role === 'store' ? (
+                  <Button asChild variant="ghost" className="hidden lg:inline-flex">
+                    <a href={routeForUser(authUser)}>Ir a mi panel</a>
+                  </Button>
+                ) : null}
                 <Button variant="outline" className="hidden h-10 rounded-full px-5 sm:inline-flex" onClick={handleLogout}>
                   Salir
                 </Button>
@@ -537,11 +539,13 @@ function App() {
                   <div className="grid gap-3">
                     {authUser ? (
                       <>
-                        <SheetClose asChild>
-                          <Button asChild variant="ghost" className="h-11 justify-start rounded-xl px-4">
-                            <a href={routeForUser(authUser)}>Ir a mi panel</a>
-                          </Button>
-                        </SheetClose>
+                        {authUser.role === 'store' ? (
+                          <SheetClose asChild>
+                            <Button asChild variant="ghost" className="h-11 justify-start rounded-xl px-4">
+                              <a href={routeForUser(authUser)}>Ir a mi panel</a>
+                            </Button>
+                          </SheetClose>
+                        ) : null}
                         <SheetClose asChild>
                           <Button className="h-11 rounded-xl px-4" onClick={handleLogout}>
                             Salir
@@ -943,7 +947,9 @@ function App() {
                 </h3>
                 <p className="max-w-2xl text-sm leading-6 text-muted-foreground sm:text-base">
                   {authUser
-                    ? 'Puedes ir directo a tu panel y continuar con tus flujos de proveedor o comprador.'
+                    ? authUser.role === 'store'
+                      ? 'Puedes ir directo a tu panel y continuar con tus flujos de proveedor.'
+                      : 'Tu sesión está activa. Ya puedes navegar el marketplace y dejar reseñas como customer.'
                     : 'La portada quedó más limpia, pero el acceso a la plataforma sigue disponible cuando lo necesites.'}
                 </p>
               </div>
@@ -951,9 +957,11 @@ function App() {
               <div className="flex flex-wrap gap-2">
                 {authUser ? (
                   <>
-                    <Button asChild className="rounded-full px-5">
-                      <a href={routeForUser(authUser)}>Ir a mi panel</a>
-                    </Button>
+                    {authUser.role === 'store' ? (
+                      <Button asChild className="rounded-full px-5">
+                        <a href={routeForUser(authUser)}>Ir a mi panel</a>
+                      </Button>
+                    ) : null}
                     <Button variant="outline" className="rounded-full px-5" onClick={handleLogout}>
                       Salir
                     </Button>
