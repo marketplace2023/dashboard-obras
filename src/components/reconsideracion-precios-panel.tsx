@@ -11,7 +11,7 @@ type MsgState = { tone: 'success' | 'error'; text: string } | null
 
 type BimObra = { id: string; codigo: string; nombre: string }
 type BimPresupuesto = { id: string; nombre: string; version: number; tipo: string }
-type Valuacion = { id: string; numero: number; periodo_desde: string; periodo_hasta: string }
+type Valuacion = { id: string; numero: number; periodo_desde: string; periodo_hasta: string; estado?: string }
 
 type Documento = {
   id: string
@@ -146,7 +146,7 @@ function ReconsideracionPreciosPanel({ token, onMessage, initialObraId }: Props)
       .then(async ([valuacionesRes, documentosRes]) => {
         const valuacionesData = await valuacionesRes.json() as unknown
         const documentosData = await documentosRes.json() as unknown
-        const nextValuaciones = unwrapList<Valuacion>(valuacionesData)
+        const nextValuaciones = unwrapList<Valuacion>(valuacionesData).filter((item) => ['revisada', 'aprobada', 'facturada'].includes(item.estado ?? ''))
         const nextDocumentos = unwrapList<Documento>(documentosData)
         setValuaciones(nextValuaciones)
         setDocumentos(nextDocumentos)
@@ -268,9 +268,9 @@ function ReconsideracionPreciosPanel({ token, onMessage, initialObraId }: Props)
   }
 
   async function handlePrint() {
-    if (!selectedPresupuestoId || !selectedObraId) return
+    if (!selectedPresupuestoId || !selectedObraId || !selectedDocumentoId) return
     try {
-      const response = await fetch(`${API_BASE_URL}/reportes/pdf?type=comparativo&obraId=${selectedObraId}&presupuestoId=${selectedPresupuestoId}`, { headers })
+      const response = await fetch(`${API_BASE_URL}/reportes/pdf?type=reconsideracion-precios&obraId=${selectedObraId}&presupuestoId=${selectedPresupuestoId}&documentoId=${selectedDocumentoId}`, { headers })
       if (!response.ok) throw new Error('No se pudo generar el PDF')
       const blob = await response.blob()
       const url = URL.createObjectURL(blob)
@@ -320,16 +320,16 @@ function ReconsideracionPreciosPanel({ token, onMessage, initialObraId }: Props)
           </div>
           <div className="grid gap-1.5">
             <Label className="text-xs">Presupuesto</Label>
-            <select value={selectedPresupuestoId} onChange={(event) => setSelectedPresupuestoId(event.target.value)} className="h-10 rounded-xl border border-border/70 bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40">
-              <option value="">Selecciona un presupuesto</option>
+              <select value={selectedPresupuestoId} onChange={(event) => setSelectedPresupuestoId(event.target.value)} className="h-10 rounded-xl border border-border/70 bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40">
+                <option value="">Selecciona un presupuesto</option>
               {presupuestos.map((presupuesto) => <option key={presupuesto.id} value={presupuesto.id}>{presupuesto.tipo === 'sin_apu' ? 'Sin A.P.U.' : 'Con A.P.U.'} · v{presupuesto.version} · {presupuesto.nombre}</option>)}
             </select>
           </div>
           <div className="grid gap-1.5">
             <Label className="text-xs">Basado en valuación</Label>
-            <select value={selectedValuacionId} onChange={(event) => setSelectedValuacionId(event.target.value)} className="h-10 rounded-xl border border-border/70 bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40">
-              <option value="">Usar presupuesto base</option>
-              {valuaciones.map((valuacion) => <option key={valuacion.id} value={valuacion.id}>Valuación Nro. {valuacion.numero} · {valuacion.periodo_desde.slice(0, 10)} al {valuacion.periodo_hasta.slice(0, 10)}</option>)}
+              <select value={selectedValuacionId} onChange={(event) => setSelectedValuacionId(event.target.value)} className="h-10 rounded-xl border border-border/70 bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40">
+                <option value="">Usar presupuesto base</option>
+              {valuaciones.map((valuacion) => <option key={valuacion.id} value={valuacion.id}>Valuación Nro. {valuacion.numero} · {valuacion.periodo_desde.slice(0, 10)} al {valuacion.periodo_hasta.slice(0, 10)} [{valuacion.estado}]</option>)}
             </select>
           </div>
           <div className="flex items-end gap-2">
@@ -355,6 +355,11 @@ function ReconsideracionPreciosPanel({ token, onMessage, initialObraId }: Props)
           <MetricCard label="Reconsiderado" value={resumen?.resumen.reconsiderado ?? '0'} />
           <MetricCard label="Diferencial" value={resumen?.resumen.diferencial ?? '0'} tone="primary" />
           <MetricCard label="Fuente" value={resumen?.resumen.fuente === 'valuacion' ? 'Valuación' : 'Presupuesto'} raw />
+        </CardContent>
+        <CardContent className="pt-0">
+          <p className="text-xs text-muted-foreground">
+            Si basas la reconsideración en valuación, solo se permiten valuaciones formalizadas: `revisada`, `aprobada` o `facturada`.
+          </p>
         </CardContent>
       </Card>
 

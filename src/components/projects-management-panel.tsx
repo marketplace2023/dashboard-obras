@@ -9,12 +9,20 @@ import { Label } from '@/components/ui/label'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import { API_BASE_URL, type AuthUser } from '@/lib/auth'
+import { cn } from '@/lib/utils'
 
 type ProjectsManagementPanelProps = {
   user: AuthUser
   token: string
   onMessage: (message: { tone: 'success' | 'error'; text: string } | null) => void
-  onOpenBudget?: (project: ProjectItem, target?: 'partidas' | 'presupuestos-sin-apu' | 'presupuestos-aumentos' | 'presupuestos-disminuciones' | 'obras-extras' | 'control-mediciones' | 'valuaciones' | 'computos-metricos' | 'reconsideracion-precios' | 'memorias-descriptivas' | 'reportes-consolidados' | 'cierre-obra') => void
+  onOpenBudget?: (project: ProjectItem, target?: 'projects' | 'capitulos' | 'partidas' | 'presupuestos-sin-apu' | 'presupuestos-aumentos' | 'presupuestos-disminuciones' | 'obras-extras' | 'control-mediciones' | 'valuaciones' | 'computos-metricos' | 'reconsideracion-precios' | 'memorias-descriptivas' | 'reportes-consolidados' | 'cierre-obra') => void
+  activeProjectId?: string
+  activeProjectWorkflow?: {
+    presupuestoOriginal: { nombre: string; version: number; tipo: string } | null
+    presupuestoModificado: { nombre: string; version: number; tipo: string } | null
+    currentStageKey: string
+    recommendedSectionKey: string
+  } | null
 }
 
 type ProjectItem = {
@@ -98,6 +106,14 @@ type ProjectFormState = {
   retencion_fiel_pct: string
 }
 
+type ProjectWorkflowAction = {
+  key: 'projects' | 'capitulos' | 'partidas' | 'presupuestos-sin-apu' | 'computos-metricos' | 'memorias-descriptivas' | 'control-mediciones' | 'valuaciones' | 'presupuestos-aumentos' | 'presupuestos-disminuciones' | 'obras-extras' | 'reconsideracion-precios' | 'reportes-consolidados' | 'cierre-obra'
+  phaseLabel: string
+  label: string
+  description: string
+  tone?: 'primary' | 'neutral'
+}
+
 const defaultProjectForm: ProjectFormState = {
   codigo: '',
   nombre: '',
@@ -178,7 +194,103 @@ function mapProjectToForm(project: ProjectItem): ProjectFormState {
   }
 }
 
-function ProjectsManagementPanel({ user, token, onMessage, onOpenBudget }: ProjectsManagementPanelProps) {
+const projectWorkflowActions: ProjectWorkflowAction[] = [
+  {
+    key: 'projects',
+    phaseLabel: 'Fase 1',
+    label: 'Fijar obra activa',
+    description: 'Deja esta obra como contexto principal del flujo BIM por proyecto.',
+    tone: 'primary',
+  },
+  {
+    key: 'capitulos',
+    phaseLabel: 'Fase 2',
+    label: 'Organizar capítulos',
+    description: 'Estructura capítulos y subcapítulos antes de consolidar cantidades y presupuesto.',
+    tone: 'primary',
+  },
+  {
+    key: 'partidas',
+    phaseLabel: 'Fase 4',
+    label: 'Presupuesto original con A.P.U.',
+    description: 'Construye y deja operativo el presupuesto original analítico.',
+    tone: 'primary',
+  },
+  {
+    key: 'presupuestos-sin-apu',
+    phaseLabel: 'Fase 4',
+    label: 'Presupuesto original sin A.P.U.',
+    description: 'Alternativa cuando el contrato base no requiere análisis unitario.',
+  },
+  {
+    key: 'computos-metricos',
+    phaseLabel: 'Fase 3',
+    label: 'Cómputos métricos',
+    description: 'Carga cantidades técnicas antes de cerrar el presupuesto original.',
+  },
+  {
+    key: 'memorias-descriptivas',
+    phaseLabel: 'Fase 5',
+    label: 'Memorias descriptivas',
+    description: 'Documenta alcance y criterio técnico de la obra.',
+  },
+  {
+    key: 'control-mediciones',
+    phaseLabel: 'Fase 6',
+    label: 'Control de mediciones',
+    description: 'Registra avance físico válido del proyecto.',
+  },
+  {
+    key: 'valuaciones',
+    phaseLabel: 'Fase 7',
+    label: 'Valuaciones',
+    description: 'Genera avance económico a partir de mediciones válidas.',
+  },
+  {
+    key: 'presupuestos-aumentos',
+    phaseLabel: 'Fase 8',
+    label: 'Aumentos',
+    description: 'Formaliza cambios contractuales por aumento.',
+  },
+  {
+    key: 'presupuestos-disminuciones',
+    phaseLabel: 'Fase 8',
+    label: 'Disminuciones',
+    description: 'Formaliza reducciones contractuales del alcance.',
+  },
+  {
+    key: 'obras-extras',
+    phaseLabel: 'Fase 8',
+    label: 'Obras extras',
+    description: 'Registra partidas adicionales fuera del contrato original.',
+  },
+  {
+    key: 'reconsideracion-precios',
+    phaseLabel: 'Fase 9',
+    label: 'Reconsideración de precios',
+    description: 'Ajusta el impacto económico independiente del cambio físico.',
+  },
+  {
+    key: 'reportes-consolidados',
+    phaseLabel: 'Fase 10',
+    label: 'Reportes consolidados',
+    description: 'Consulta el consolidado económico y físico de la obra.',
+  },
+  {
+    key: 'cierre-obra',
+    phaseLabel: 'Fase 11',
+    label: 'Cierre de obra',
+    description: 'Revisa el checklist final y cierra la obra.',
+  },
+]
+
+function formatBudgetLabel(budget?: { nombre: string; version: number; tipo: string } | null) {
+  if (!budget) return 'Pendiente'
+  const tipo = budget.tipo === 'sin_apu' ? 'Sin A.P.U.' : budget.tipo === 'modificado' ? 'Modificado' : 'Con A.P.U.'
+  return `${tipo} · v${budget.version} · ${budget.nombre}`
+}
+
+function ProjectsManagementPanel({ user, token, onMessage, onOpenBudget, activeProjectId, activeProjectWorkflow }: ProjectsManagementPanelProps) {
   const [loading, setLoading] = useState(true)
   const [savingProject, setSavingProject] = useState(false)
   const [projects, setProjects] = useState<ProjectItem[]>([])
@@ -194,6 +306,8 @@ function ProjectsManagementPanel({ user, token, onMessage, onOpenBudget }: Proje
     }),
     [projects]
   )
+
+  const recommendedActionKey = activeProjectWorkflow?.recommendedSectionKey ?? 'projects'
 
   useEffect(() => {
     let active = true
@@ -304,7 +418,7 @@ function ProjectsManagementPanel({ user, token, onMessage, onOpenBudget }: Proje
       resetProjectForm()
       onMessage({ tone: 'success', text: editingProjectId ? 'Proyecto actualizado correctamente.' : 'Proyecto creado correctamente.' })
       if (!editingProjectId) {
-        onOpenBudget?.(savedProject, 'partidas')
+        onOpenBudget?.(savedProject, 'capitulos')
       }
     } catch (error) {
       onMessage({ tone: 'error', text: error instanceof Error ? error.message : 'No se pudo guardar el proyecto.' })
@@ -709,9 +823,15 @@ function ProjectsManagementPanel({ user, token, onMessage, onOpenBudget }: Proje
           ) : null}
 
           {!loading && projects.length > 0 ? (
-            <div className="grid gap-4 2xl:grid-cols-2">
-              {projects.map((project) => (
-                <div key={project.id} className="rounded-3xl border border-border/70 bg-background/80 p-5 shadow-sm">
+            <div
+              className="grid gap-4"
+              style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))' }}
+            >
+                {projects.map((project) => {
+                  const isActiveProject = activeProjectId === project.id
+
+                  return (
+                <div key={project.id} className={cn('rounded-3xl border border-border/70 bg-background/80 p-5 shadow-sm', isActiveProject ? 'border-primary/40 ring-1 ring-primary/20' : '')}>
                   <div className="flex flex-col gap-5">
                     <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
                       <div className="space-y-3">
@@ -719,6 +839,7 @@ function ProjectsManagementPanel({ user, token, onMessage, onOpenBudget }: Proje
                           <Badge variant="secondary" className="rounded-full px-3 py-1">
                             {project.estado}
                           </Badge>
+                          {isActiveProject ? <Badge className="rounded-full px-3 py-1">Obra activa</Badge> : null}
                           <span className="rounded-full border border-border/70 bg-muted/25 px-3 py-1 text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
                             {project.codigo || 'Sin codigo'}
                           </span>
@@ -730,41 +851,11 @@ function ProjectsManagementPanel({ user, token, onMessage, onOpenBudget }: Proje
                       </div>
 
                       <div className="flex flex-wrap gap-2">
-                        <Button type="button" variant="secondary" className="rounded-full" onClick={() => onOpenBudget?.(project, 'partidas')}>
-                          Presupuesto con A.P.U.
+                        <Button type="button" variant={isActiveProject ? 'secondary' : 'outline'} className="rounded-full" onClick={() => onOpenBudget?.(project, 'projects')}>
+                          Fijar obra activa
                         </Button>
-                        <Button type="button" variant="outline" className="rounded-full" onClick={() => onOpenBudget?.(project, 'presupuestos-sin-apu')}>
-                          Presupuesto sin A.P.U.
-                        </Button>
-                        <Button type="button" variant="outline" className="rounded-full" onClick={() => onOpenBudget?.(project, 'presupuestos-aumentos')}>
-                          Presupuesto de Aumentos
-                        </Button>
-                        <Button type="button" variant="outline" className="rounded-full" onClick={() => onOpenBudget?.(project, 'presupuestos-disminuciones')}>
-                          Presupuesto de Disminuciones
-                        </Button>
-                        <Button type="button" variant="outline" className="rounded-full" onClick={() => onOpenBudget?.(project, 'control-mediciones')}>
-                          Control de Mediciones
-                        </Button>
-                        <Button type="button" variant="outline" className="rounded-full" onClick={() => onOpenBudget?.(project, 'valuaciones')}>
-                          Valuaciones
-                        </Button>
-                        <Button type="button" variant="outline" className="rounded-full" onClick={() => onOpenBudget?.(project, 'reconsideracion-precios')}>
-                          Reconsideración
-                        </Button>
-                        <Button type="button" variant="outline" className="rounded-full" onClick={() => onOpenBudget?.(project, 'obras-extras')}>
-                          Obras Extras
-                        </Button>
-                        <Button type="button" variant="outline" className="rounded-full" onClick={() => onOpenBudget?.(project, 'memorias-descriptivas')}>
-                          Memorias
-                        </Button>
-                        <Button type="button" variant="outline" className="rounded-full" onClick={() => onOpenBudget?.(project, 'reportes-consolidados')}>
-                          Reportes Consolidados
-                        </Button>
-                        <Button type="button" variant="outline" className="rounded-full" onClick={() => onOpenBudget?.(project, 'cierre-obra')}>
-                          Cierre de Obra
-                        </Button>
-                        <Button type="button" variant="outline" className="rounded-full" onClick={() => onOpenBudget?.(project, 'computos-metricos')}>
-                          Cómputos Métricos
+                        <Button type="button" variant="secondary" className="rounded-full" onClick={() => onOpenBudget?.(project, recommendedActionKey as ProjectWorkflowAction['key'])}>
+                          Abrir siguiente fase
                         </Button>
                         <Button type="button" variant="outline" className="rounded-full" onClick={() => handleEditProject(project)}>
                           <PencilLine className="size-4" />
@@ -777,7 +868,7 @@ function ProjectsManagementPanel({ user, token, onMessage, onOpenBudget }: Proje
                       </div>
                     </div>
 
-                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-2 2xl:grid-cols-4">
                       <div className="rounded-2xl border border-border/70 bg-muted/15 p-4">
                         <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Ubicacion</p>
                         <p className="mt-2 text-sm font-medium leading-6">{project.ubicacion || 'Sin ubicacion registrada'}</p>
@@ -813,6 +904,72 @@ function ProjectsManagementPanel({ user, token, onMessage, onOpenBudget }: Proje
                       </div>
                     </div>
 
+                    <div className="grid gap-3 rounded-2xl border border-border/70 bg-muted/15 p-4">
+                      <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+                        <div>
+                          <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Gobierno del flujo BIM</p>
+                          <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                            Esta tarjeta resume la fase activa y te deja entrar por secuencia, no por módulos sueltos.
+                          </p>
+                        </div>
+                        {isActiveProject ? (
+                          <Badge className="rounded-full px-3 py-1">Fase activa: {activeProjectWorkflow?.currentStageKey ?? 'projects'}</Badge>
+                        ) : null}
+                      </div>
+
+                      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-2 2xl:grid-cols-4">
+                        <div className="rounded-2xl border border-border/70 bg-background p-4">
+                          <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Presupuesto original activo</p>
+                          <p className="mt-2 text-sm font-medium leading-6">{isActiveProject ? formatBudgetLabel(activeProjectWorkflow?.presupuestoOriginal) : 'Activa esta obra para verlo'}</p>
+                        </div>
+                        <div className="rounded-2xl border border-border/70 bg-background p-4">
+                          <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Presupuesto modificado vigente</p>
+                          <p className="mt-2 text-sm font-medium leading-6">{isActiveProject ? formatBudgetLabel(activeProjectWorkflow?.presupuestoModificado) : 'Activa esta obra para verlo'}</p>
+                        </div>
+                        <div className="rounded-2xl border border-border/70 bg-background p-4">
+                          <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Fase actual</p>
+                          <p className="mt-2 text-sm font-medium leading-6">{isActiveProject ? activeProjectWorkflow?.currentStageKey ?? 'projects' : 'Sin contexto activo'}</p>
+                        </div>
+                        <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4">
+                          <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Siguiente fase recomendada</p>
+                          <p className="mt-2 text-sm font-medium leading-6">
+                            {isActiveProject
+                              ? projectWorkflowActions.find((action) => action.key === activeProjectWorkflow?.recommendedSectionKey)?.label ?? 'Fijar obra activa'
+                              : 'Activa esta obra para seguir el flujo'}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-2 2xl:grid-cols-3">
+                        {projectWorkflowActions.map((action) => {
+                          const isRecommended = isActiveProject && action.key === activeProjectWorkflow?.recommendedSectionKey
+
+                          return (
+                            <button
+                              key={`${project.id}-${action.key}`}
+                              type="button"
+                              onClick={() => onOpenBudget?.(project, action.key)}
+                              className={cn(
+                                'rounded-2xl border p-4 text-left transition-colors',
+                                isRecommended
+                                  ? 'border-primary/40 bg-primary/5'
+                                  : action.tone === 'primary'
+                                    ? 'border-border/70 bg-background hover:bg-muted/25'
+                                    : 'border-border/70 bg-background/80 hover:bg-muted/25'
+                              )}
+                            >
+                              <div className="flex flex-wrap items-center gap-2">
+                                <Badge variant="outline" className="rounded-full px-3 py-1">{action.phaseLabel}</Badge>
+                                {isRecommended ? <Badge className="rounded-full px-3 py-1">Siguiente fase recomendada</Badge> : null}
+                              </div>
+                              <p className="mt-3 font-medium">{action.label}</p>
+                              <p className="mt-1 text-sm leading-6 text-muted-foreground">{action.description}</p>
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+
                     {project.descripcion ? (
                       <div className="rounded-2xl border border-border/70 bg-muted/15 p-4">
                         <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Descripcion</p>
@@ -821,7 +978,7 @@ function ProjectsManagementPanel({ user, token, onMessage, onOpenBudget }: Proje
                     ) : null}
                   </div>
                 </div>
-              ))}
+                )})}
             </div>
           ) : null}
         </CardContent>

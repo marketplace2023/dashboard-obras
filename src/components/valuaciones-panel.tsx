@@ -42,6 +42,7 @@ type MedicionDocumento = {
   numero: number
   fecha: string
   titulo: string
+  status: string
 }
 
 type ValuacionDetalleRow = {
@@ -232,7 +233,7 @@ function ValuacionesPanel({ token, onMessage, initialObraId }: ValuacionesPanelP
         } else {
           setPeriodoDesde(today)
           setPeriodoHasta(today)
-          setSelectedMedicionId('')
+          setSelectedMedicionId(medicionesList.find((documento) => documento.status === 'revisado' || documento.status === 'aprobado')?.id ?? '')
         }
       })
       .catch(() => {
@@ -276,8 +277,17 @@ function ValuacionesPanel({ token, onMessage, initialObraId }: ValuacionesPanelP
     void loadResumen()
   }, [loadResumen])
 
+  const medicionesDisponibles = useMemo(
+    () => mediciones.filter((documento) => documento.status === 'revisado' || documento.status === 'aprobado'),
+    [mediciones],
+  )
+
   async function handleCreateDocumento() {
     if (!selectedObraId || !selectedPresupuestoId) return
+    if (!selectedMedicionId) {
+      onMessage({ tone: 'error', text: 'La valuación requiere una medición base revisada o aprobada.' })
+      return
+    }
     setCreatingDocumento(true)
     try {
       const response = await fetch(`${API_BASE_URL}/certificaciones`, {
@@ -305,13 +315,17 @@ function ValuacionesPanel({ token, onMessage, initialObraId }: ValuacionesPanelP
 
   async function handleSaveHeader() {
     if (!selectedDocumentoId) return
+    if (!selectedMedicionId) {
+      onMessage({ tone: 'error', text: 'Debes seleccionar una medición revisada o aprobada.' })
+      return
+    }
     setSavingHeader(true)
     try {
       const response = await fetch(`${API_BASE_URL}/certificaciones/${selectedDocumentoId}`, {
         method: 'PATCH',
         headers: { ...headers, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ periodo_desde: periodoDesde, periodo_hasta: periodoHasta, medicion_documento_id: selectedMedicionId || null }),
-      })
+          body: JSON.stringify({ periodo_desde: periodoDesde, periodo_hasta: periodoHasta, medicion_documento_id: selectedMedicionId }),
+        })
       if (!response.ok) throw new Error('No se pudo guardar la cabecera de valuación')
       await loadResumen()
       onMessage({ tone: 'success', text: 'Cabecera de valuación actualizada.' })
@@ -439,10 +453,10 @@ function ValuacionesPanel({ token, onMessage, initialObraId }: ValuacionesPanelP
           </div>
 
           <div className="grid gap-1.5">
-            <Label className="text-xs">Precargar desde medición</Label>
+            <Label className="text-xs">Medición base</Label>
             <select value={selectedMedicionId} onChange={(event) => setSelectedMedicionId(event.target.value)} className="h-10 rounded-xl border border-border/70 bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40">
-              <option value="">Sin medición base</option>
-              {mediciones.map((documento) => (
+              <option value="">Selecciona una medición revisada o aprobada</option>
+              {medicionesDisponibles.map((documento) => (
                 <option key={documento.id} value={documento.id}>Medición Nro. {documento.numero} · {documento.fecha.slice(0, 10)} · {documento.titulo}</option>
               ))}
             </select>
@@ -453,7 +467,7 @@ function ValuacionesPanel({ token, onMessage, initialObraId }: ValuacionesPanelP
               <FileDown className="size-4" />
               Imprimir PDF
             </Button>
-            <Button className="rounded-full" onClick={handleCreateDocumento} disabled={!selectedObraId || !selectedPresupuestoId || creatingDocumento}>
+            <Button className="rounded-full" onClick={handleCreateDocumento} disabled={!selectedObraId || !selectedPresupuestoId || !selectedMedicionId || creatingDocumento}>
               {creatingDocumento ? <LoaderCircle className="size-4 animate-spin" /> : <Plus className="size-4" />}
               Nueva valuación
             </Button>
@@ -517,6 +531,7 @@ function ValuacionesPanel({ token, onMessage, initialObraId }: ValuacionesPanelP
           <div className="grid gap-1 text-sm text-muted-foreground">
             <span>{selectedObra ? `${selectedObra.codigo} · ${selectedObra.nombre}` : 'Selecciona una obra'}</span>
             <span>{selectedPresupuesto ? selectedPresupuesto.nombre : 'Selecciona un presupuesto base'}</span>
+            <span>{selectedMedicionId ? `Valuación ligada a medición base ${selectedMedicionId}.` : 'Debes escoger una medición revisada o aprobada.'}</span>
           </div>
         </CardHeader>
 

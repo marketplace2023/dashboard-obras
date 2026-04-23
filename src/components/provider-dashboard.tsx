@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import {
+  ArrowRight,
   BadgeCheck,
   Blocks,
   Building2,
@@ -24,6 +25,7 @@ import {
   Upload,
   UserRound,
   X,
+  type LucideIcon,
 } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
@@ -51,6 +53,7 @@ import {
 import { Textarea } from '@/components/ui/textarea'
 import { API_BASE_URL, type AuthUser } from '@/lib/auth'
 import { ProjectsManagementPanel } from '@/components/projects-management-panel'
+import { CapitulosPanel } from '@/components/capitulos-panel'
 import { PartidasPanelWithBoundary } from '@/components/partidas-panel'
 import { MaestrosPanel } from '@/components/maestros-panel'
 import { CierreObraPanel } from '@/components/cierre-obra-panel'
@@ -74,6 +77,7 @@ type ProviderDashboardProps = {
 type DashboardSection =
   | 'overview'
   | 'projects'
+  | 'capitulos'
   | 'partidas'
   | 'presupuestos-sin-apu'
   | 'presupuestos-aumentos'
@@ -209,6 +213,85 @@ type ProductFormState = {
 
 type MessageState = { tone: 'success' | 'error'; text: string } | null
 
+type WorkflowStageKey =
+  | 'projects'
+  | 'capitulos'
+  | 'computos'
+  | 'presupuesto-original'
+  | 'memorias'
+  | 'mediciones'
+  | 'valuaciones'
+  | 'cambios'
+  | 'reconsideracion'
+  | 'reportes'
+  | 'cierre'
+
+type BimWorkflowStep = {
+  key: DashboardSection
+  stageKey: WorkflowStageKey
+  orderLabel: string
+  label: string
+  description: string
+  icon: LucideIcon
+  variant?: 'primary' | 'alternative'
+}
+
+type BimWorkflowStage = {
+  key: WorkflowStageKey
+  label: string
+  description: string
+  defaultSection: DashboardSection
+}
+
+type BimBudget = {
+  id: string
+  nombre: string
+  version: number
+  tipo: string
+  estado?: string | null
+  total_presupuesto?: string | null
+  presupuesto_base_id?: string | null
+  es_oficial?: boolean | null
+}
+
+type WorkflowMetrics = {
+  capitulos: number
+  partidasPresupuestoOriginal: number
+  computos: number
+  memorias: number
+  mediciones: number
+  valuaciones: number
+  aumentos: number
+  disminuciones: number
+  extras: number
+  reconsideraciones: number
+}
+
+type ProjectWorkflowContext = {
+  presupuestoOriginal: BimBudget | null
+  presupuestoModificado: BimBudget | null
+  metrics: WorkflowMetrics
+  currentStageKey: WorkflowStageKey
+  recommendedSectionKey: DashboardSection
+  completedStageKeys: WorkflowStageKey[]
+  progress: number
+}
+
+type WorkflowStepAccess = {
+  blockedReason?: string
+  warning?: string
+  isRecommended?: boolean
+}
+
+type BimWorkflowCapituloNode = {
+  children?: BimWorkflowCapituloNode[]
+  partidas?: Array<{ id: string }>
+}
+
+type BimWorkflowBudgetTree = {
+  capitulos?: BimWorkflowCapituloNode[]
+}
+
 const validSellerEntityTypes = new Set([
   'contractor',
   'education_provider',
@@ -258,6 +341,197 @@ const defaultProductForm: ProductFormState = {
   stock: '0',
 }
 
+const bimWorkflowStages: BimWorkflowStage[] = [
+  {
+    key: 'projects',
+    label: 'Proyecto activo',
+    description: 'Selecciona la obra y fija el contexto del flujo BIM.',
+    defaultSection: 'projects',
+  },
+  {
+    key: 'capitulos',
+    label: 'Organizacion de capitulos',
+    description: 'Define capitulos y subcapitulos del proyecto antes de cuantificar y consolidar el presupuesto.',
+    defaultSection: 'capitulos',
+  },
+  {
+    key: 'computos',
+    label: 'Cómputos métricos',
+    description: 'Registra cantidades tecnicas de referencia antes de consolidar el presupuesto original.',
+    defaultSection: 'computos-metricos',
+  },
+  {
+    key: 'presupuesto-original',
+    label: 'Presupuesto original',
+    description: 'Construye el contrato base con o sin A.P.U. a partir de capitulos y computos activos.',
+    defaultSection: 'partidas',
+  },
+  {
+    key: 'memorias',
+    label: 'Memorias descriptivas',
+    description: 'Documenta alcance y criterio técnico antes de medir y valorar.',
+    defaultSection: 'memorias-descriptivas',
+  },
+  {
+    key: 'mediciones',
+    label: 'Control de mediciones',
+    description: 'Registra avance físico válido para el resto del circuito.',
+    defaultSection: 'control-mediciones',
+  },
+  {
+    key: 'valuaciones',
+    label: 'Valuaciones',
+    description: 'Convierte el avance físico en documento económico formal.',
+    defaultSection: 'valuaciones',
+  },
+  {
+    key: 'cambios',
+    label: 'Cambios contractuales',
+    description: 'Formaliza aumentos, disminuciones y extras sobre el contrato base.',
+    defaultSection: 'presupuestos-aumentos',
+  },
+  {
+    key: 'reconsideracion',
+    label: 'Reconsideración de precios',
+    description: 'Ajusta impacto económico sin mezclarlo con cambios físicos.',
+    defaultSection: 'reconsideracion-precios',
+  },
+  {
+    key: 'reportes',
+    label: 'Reportes consolidados',
+    description: 'Consolida presupuesto, ejecución y diferencias del proyecto.',
+    defaultSection: 'reportes-consolidados',
+  },
+  {
+    key: 'cierre',
+    label: 'Cierre de obra',
+    description: 'Revisa checklist y consistencia final para cerrar la obra.',
+    defaultSection: 'cierre-obra',
+  },
+]
+
+const bimWorkflowSteps: BimWorkflowStep[] = [
+  {
+    key: 'projects',
+    stageKey: 'projects',
+    orderLabel: '1',
+    label: 'Mis proyectos',
+    description: 'Selecciona la obra activa y fija el contexto operativo.',
+    icon: FolderOpen,
+  },
+  {
+    key: 'capitulos',
+    stageKey: 'capitulos',
+    orderLabel: '2',
+    label: 'Organizacion de capitulos',
+    description: 'Estructura capitulos y subcapitulos antes de cuantificar y cargar las partidas definitivas.',
+    icon: Blocks,
+  },
+  {
+    key: 'computos-metricos',
+    stageKey: 'computos',
+    orderLabel: '3',
+    label: 'Cómputos métricos',
+    description: 'Registra cantidades base derivadas de planos y criterios de cálculo.',
+    icon: Calculator,
+  },
+  {
+    key: 'partidas',
+    stageKey: 'presupuesto-original',
+    orderLabel: '4A',
+    label: 'Presupuesto con A.P.U.',
+    description: 'Construye el presupuesto analitico con partidas, analisis y precios unitarios.',
+    icon: ListChecks,
+    variant: 'primary',
+  },
+  {
+    key: 'presupuestos-sin-apu',
+    stageKey: 'presupuesto-original',
+    orderLabel: '4B',
+    label: 'Presupuesto sin A.P.U.',
+    description: 'Define el presupuesto directo cuando el proyecto no requiera analisis detallado.',
+    icon: ListChecks,
+    variant: 'alternative',
+  },
+  {
+    key: 'memorias-descriptivas',
+    stageKey: 'memorias',
+    orderLabel: '5',
+    label: 'Memorias descriptivas',
+    description: 'Documenta alcance, procedimiento y justificaciones técnicas.',
+    icon: FileText,
+  },
+  {
+    key: 'control-mediciones',
+    stageKey: 'mediciones',
+    orderLabel: '6',
+    label: 'Control de mediciones',
+    description: 'Registra avance físico periódico sobre partidas del presupuesto.',
+    icon: ClipboardList,
+  },
+  {
+    key: 'valuaciones',
+    stageKey: 'valuaciones',
+    orderLabel: '7',
+    label: 'Valuaciones',
+    description: 'Convierte el avance físico en documento económico de cobro.',
+    icon: ClipboardList,
+  },
+  {
+    key: 'presupuestos-aumentos',
+    stageKey: 'cambios',
+    orderLabel: '8A',
+    label: 'Presupuestos de aumentos',
+    description: 'Formaliza cantidades o trabajos adicionales del contrato.',
+    icon: ClipboardList,
+  },
+  {
+    key: 'presupuestos-disminuciones',
+    stageKey: 'cambios',
+    orderLabel: '8B',
+    label: 'Presupuestos de disminuciones',
+    description: 'Registra reducciones de alcance respecto al presupuesto base.',
+    icon: ClipboardList,
+  },
+  {
+    key: 'obras-extras',
+    stageKey: 'cambios',
+    orderLabel: '8C',
+    label: 'Obras extras',
+    description: 'Controla partidas extraordinarias fuera del alcance original.',
+    icon: ClipboardList,
+  },
+  {
+    key: 'reconsideracion-precios',
+    stageKey: 'reconsideracion',
+    orderLabel: '9',
+    label: 'Reconsideración de precios',
+    description: 'Ajusta impactos económicos sobre valuaciones y costos base.',
+    icon: ClipboardList,
+  },
+  {
+    key: 'reportes-consolidados',
+    stageKey: 'reportes',
+    orderLabel: '10',
+    label: 'Reportes consolidados',
+    description: 'Consulta comparativos, consolidados y saldos del proyecto.',
+    icon: FileText,
+  },
+  {
+    key: 'cierre-obra',
+    stageKey: 'cierre',
+    orderLabel: '11',
+    label: 'Cierre de obra',
+    description: 'Revisa la consistencia final física y económica del proyecto.',
+    icon: FileText,
+  },
+]
+
+const bimSectionKeys = new Set<DashboardSection>(bimWorkflowSteps.map((step) => step.key))
+const bimWorkflowStepsByKey = new Map<DashboardSection, BimWorkflowStep>(bimWorkflowSteps.map((step) => [step.key, step]))
+const bimWorkflowStagesByKey = new Map<WorkflowStageKey, BimWorkflowStage>(bimWorkflowStages.map((stage) => [stage.key, stage]))
+const bimWorkflowStageIndex = new Map<WorkflowStageKey, number>(bimWorkflowStages.map((stage, index) => [stage.key, index]))
+
 async function parseApiResponse<T>(response: Response): Promise<T> {
   const contentType = response.headers.get('content-type') ?? ''
   const data = contentType.includes('application/json') ? await response.json() : await response.text()
@@ -270,6 +544,104 @@ async function parseApiResponse<T>(response: Response): Promise<T> {
   return data as T
 }
 
+function unwrapList<T>(data: unknown): T[] {
+  if (Array.isArray(data)) return data as T[]
+  if (data && typeof data === 'object' && 'data' in data && Array.isArray((data as { data: unknown }).data)) {
+    return (data as { data: T[] }).data
+  }
+  return []
+}
+
+function sortBudgetsByVersion(a: BimBudget, b: BimBudget) {
+  const officialDiff = Number(b.es_oficial ? 1 : 0) - Number(a.es_oficial ? 1 : 0)
+  if (officialDiff !== 0) return officialDiff
+  const versionDiff = Number(b.version || 0) - Number(a.version || 0)
+  if (versionDiff !== 0) return versionDiff
+  return String(a.nombre || '').localeCompare(String(b.nombre || ''))
+}
+
+function formatBudgetContext(budget: BimBudget | null, emptyLabel: string) {
+  if (!budget) return emptyLabel
+  const tipoLabel = budget.tipo === 'sin_apu' ? 'Sin A.P.U.' : budget.tipo === 'modificado' ? 'Modificado' : 'Con A.P.U.'
+  return `${tipoLabel} · v${budget.version} · ${budget.nombre}${budget.es_oficial ? ' · Oficial' : ''}`
+}
+
+function summarizeBudgetTree(tree: BimWorkflowBudgetTree | null | undefined) {
+  let capitulos = 0
+  let partidas = 0
+
+  const walk = (nodes: BimWorkflowCapituloNode[] = []) => {
+    for (const node of nodes) {
+      capitulos += 1
+      partidas += Array.isArray(node.partidas) ? node.partidas.length : 0
+      if (node.children?.length) walk(node.children)
+    }
+  }
+
+  walk(tree?.capitulos ?? [])
+
+  return { capitulos, partidas }
+}
+
+function buildProjectWorkflowContext(
+  presupuestoOriginal: BimBudget | null,
+  presupuestoModificado: BimBudget | null,
+  metrics: WorkflowMetrics,
+  projectStatus?: string | null,
+): ProjectWorkflowContext {
+  const completedStageKeys: WorkflowStageKey[] = ['projects']
+
+  if (metrics.capitulos > 0) completedStageKeys.push('capitulos')
+  if (metrics.computos > 0) completedStageKeys.push('computos')
+  if (metrics.partidasPresupuestoOriginal > 0) completedStageKeys.push('presupuesto-original')
+  if (metrics.memorias > 0) completedStageKeys.push('memorias')
+  if (metrics.mediciones > 0) completedStageKeys.push('mediciones')
+  if (metrics.valuaciones > 0) completedStageKeys.push('valuaciones')
+  if (presupuestoModificado || metrics.aumentos + metrics.disminuciones + metrics.extras > 0) completedStageKeys.push('cambios')
+  if (metrics.reconsideraciones > 0) completedStageKeys.push('reconsideracion')
+  if (projectStatus === 'finalizada') {
+    completedStageKeys.push('reportes', 'cierre')
+  }
+
+  const uniqueCompletedStageKeys = Array.from(new Set(completedStageKeys))
+
+  let currentStageKey: WorkflowStageKey = 'projects'
+  if (metrics.capitulos === 0) {
+    currentStageKey = 'capitulos'
+  } else if (metrics.computos === 0) {
+    currentStageKey = 'computos'
+  } else if (metrics.partidasPresupuestoOriginal === 0) {
+    currentStageKey = 'presupuesto-original'
+  } else if (metrics.memorias === 0) {
+    currentStageKey = 'memorias'
+  } else if (metrics.mediciones === 0) {
+    currentStageKey = 'mediciones'
+  } else if (metrics.valuaciones === 0) {
+    currentStageKey = 'valuaciones'
+  } else if (!presupuestoModificado && metrics.aumentos + metrics.disminuciones + metrics.extras === 0) {
+    currentStageKey = 'cambios'
+  } else if (metrics.reconsideraciones === 0) {
+    currentStageKey = 'reconsideracion'
+  } else if (projectStatus === 'finalizada') {
+    currentStageKey = 'cierre'
+  } else {
+    currentStageKey = 'reportes'
+  }
+
+  const currentStage = bimWorkflowStagesByKey.get(currentStageKey) ?? bimWorkflowStages[0]
+  const progress = Math.round((uniqueCompletedStageKeys.length / bimWorkflowStages.length) * 100)
+
+  return {
+    presupuestoOriginal,
+    presupuestoModificado,
+    metrics,
+    currentStageKey,
+    recommendedSectionKey: currentStage.defaultSection,
+    completedStageKeys: uniqueCompletedStageKeys,
+    progress,
+  }
+}
+
 function toBoolean(value: unknown) {
   return value === true || value === 1 || value === '1'
 }
@@ -280,6 +652,9 @@ function ProviderDashboard({ user, token, onLogout }: ProviderDashboardProps) {
   const [maestrosOpen, setMaestrosOpen] = useState(true)
   const [obrasOpen, setObrasOpen] = useState(false)
   const [selectedObraFromProjects, setSelectedObraFromProjects] = useState<string | null>(null)
+  const [selectedObraNameFromProjects, setSelectedObraNameFromProjects] = useState<string>('')
+  const [projectWorkflowContext, setProjectWorkflowContext] = useState<ProjectWorkflowContext | null>(null)
+  const [loadingProjectWorkflow, setLoadingProjectWorkflow] = useState(false)
   const [loading, setLoading] = useState(true)
   const [savingProfile, setSavingProfile] = useState(false)
   const [creatingProduct, setCreatingProduct] = useState(false)
@@ -310,10 +685,60 @@ function ProviderDashboard({ user, token, onLogout }: ProviderDashboardProps) {
     return storeData.x_verification_status
   }, [storeData])
 
+  const recommendedWorkflowStep = useMemo(
+    () => (projectWorkflowContext ? bimWorkflowStepsByKey.get(projectWorkflowContext.recommendedSectionKey) ?? null : null),
+    [projectWorkflowContext],
+  )
+
+  const currentWorkflowStage = useMemo(
+    () => (projectWorkflowContext ? bimWorkflowStagesByKey.get(projectWorkflowContext.currentStageKey) ?? null : null),
+    [projectWorkflowContext],
+  )
+
+  const stepAccessByKey = useMemo(() => {
+    const entries: Array<[DashboardSection, WorkflowStepAccess]> = bimWorkflowSteps.map((step) => {
+      const base: WorkflowStepAccess = {}
+      if (!selectedObraFromProjects && step.key !== 'projects') {
+        return [step.key, { blockedReason: 'Primero selecciona una obra activa desde Mis proyectos.' }]
+      }
+
+      if (!projectWorkflowContext) {
+        return [step.key, base]
+      }
+
+      const stepStageIndex = bimWorkflowStageIndex.get(step.stageKey) ?? 0
+      const currentStageIndex = bimWorkflowStageIndex.get(projectWorkflowContext.currentStageKey) ?? 0
+      const recommendedSectionKey = projectWorkflowContext.recommendedSectionKey
+      const stageCompleted = projectWorkflowContext.completedStageKeys.includes(step.stageKey)
+
+      if (step.key === recommendedSectionKey) {
+        base.isRecommended = true
+      }
+
+      if (stepStageIndex > currentStageIndex && !stageCompleted) {
+        const stage = bimWorkflowStagesByKey.get(projectWorkflowContext.currentStageKey)
+        base.warning = stage ? `Te adelantaste: aún está pendiente la fase ${stage.label}.` : 'Te adelantaste en el flujo BIM: aún faltan fases previas.'
+        return [step.key, base]
+      }
+
+      if (step.stageKey !== projectWorkflowContext.currentStageKey && !stageCompleted && step.key !== recommendedSectionKey) {
+        const recommended = bimWorkflowStepsByKey.get(recommendedSectionKey)
+        if (recommended) {
+          base.warning = `El siguiente paso recomendado es ${recommended.label}.`
+        }
+      }
+
+      return [step.key, base]
+    })
+
+    return new Map<DashboardSection, WorkflowStepAccess>(entries)
+  }, [projectWorkflowContext, selectedObraFromProjects])
+
   const validSections = useMemo<DashboardSection[]>(
     () => [
       'overview',
       'projects',
+      'capitulos',
       'partidas',
       'presupuestos-sin-apu',
       'presupuestos-aumentos',
@@ -346,12 +771,93 @@ function ProviderDashboard({ user, token, onLogout }: ProviderDashboardProps) {
   }, [searchParams, validSections])
 
   useEffect(() => {
+    const obraId = searchParams.get('obra')
+    const obraNombre = searchParams.get('obraNombre')
+    setSelectedObraFromProjects(obraId || null)
+    setSelectedObraNameFromProjects(obraNombre || '')
+  }, [searchParams])
+
+  const loadProjectWorkflowContext = useCallback(async () => {
+    if (!selectedObraFromProjects) {
+      setProjectWorkflowContext(null)
+      return
+    }
+
+    setLoadingProjectWorkflow(true)
+
+    try {
+      const headers = { Authorization: `Bearer ${token}` }
+      const [obraResponse, obraBudgetResponse, sinApuBudgetResponse, modBudgetResponse, computosResponse, memoriasResponse, medicionesResponse, valuacionesResponse, aumentosResponse, disminucionesResponse, extrasResponse, reconsideracionesResponse] = await Promise.all([
+        parseApiResponse<{ estado?: string }>(await fetch(`${API_BASE_URL}/obras/${selectedObraFromProjects}`, { headers })),
+        parseApiResponse<unknown>(await fetch(`${API_BASE_URL}/presupuestos/obra/${selectedObraFromProjects}?tipo=obra`, { headers })),
+        parseApiResponse<unknown>(await fetch(`${API_BASE_URL}/presupuestos/obra/${selectedObraFromProjects}?tipo=sin_apu`, { headers })),
+        parseApiResponse<unknown>(await fetch(`${API_BASE_URL}/presupuestos/obra/${selectedObraFromProjects}?tipo=modificado`, { headers })),
+        parseApiResponse<unknown>(await fetch(`${API_BASE_URL}/computos/obra/${selectedObraFromProjects}`, { headers })),
+        parseApiResponse<unknown>(await fetch(`${API_BASE_URL}/memorias/obra/${selectedObraFromProjects}`, { headers })),
+        parseApiResponse<unknown>(await fetch(`${API_BASE_URL}/mediciones/obra/${selectedObraFromProjects}`, { headers })),
+        parseApiResponse<unknown>(await fetch(`${API_BASE_URL}/certificaciones/obra/${selectedObraFromProjects}`, { headers })),
+        parseApiResponse<unknown>(await fetch(`${API_BASE_URL}/reconsideraciones/obra/${selectedObraFromProjects}?tipo=aumento`, { headers })),
+        parseApiResponse<unknown>(await fetch(`${API_BASE_URL}/reconsideraciones/obra/${selectedObraFromProjects}?tipo=disminucion`, { headers })),
+        parseApiResponse<unknown>(await fetch(`${API_BASE_URL}/reconsideraciones/obra/${selectedObraFromProjects}?tipo=extra`, { headers })),
+        parseApiResponse<unknown>(await fetch(`${API_BASE_URL}/reconsideraciones/obra/${selectedObraFromProjects}?tipo=precio`, { headers })),
+      ])
+
+      const originalBudgets = [
+        ...unwrapList<BimBudget>(obraBudgetResponse),
+        ...unwrapList<BimBudget>(sinApuBudgetResponse),
+      ].sort(sortBudgetsByVersion)
+      const modifiedBudgets = unwrapList<BimBudget>(modBudgetResponse).sort(sortBudgetsByVersion)
+      const originalBudgetTree = originalBudgets[0]
+        ? await parseApiResponse<BimWorkflowBudgetTree>(
+            await fetch(`${API_BASE_URL}/presupuestos/${originalBudgets[0].id}/arbol`, { headers }),
+          )
+        : null
+      const originalBudgetStructure = summarizeBudgetTree(originalBudgetTree)
+
+      const workflowContext = buildProjectWorkflowContext(
+        originalBudgets[0] ?? null,
+        modifiedBudgets[0] ?? null,
+        {
+          capitulos: originalBudgetStructure.capitulos,
+          partidasPresupuestoOriginal: originalBudgetStructure.partidas,
+          computos: unwrapList(computosResponse).length,
+          memorias: unwrapList(memoriasResponse).length,
+          mediciones: unwrapList(medicionesResponse).length,
+          valuaciones: unwrapList(valuacionesResponse).length,
+          aumentos: unwrapList(aumentosResponse).length,
+          disminuciones: unwrapList(disminucionesResponse).length,
+          extras: unwrapList(extrasResponse).length,
+          reconsideraciones: unwrapList(reconsideracionesResponse).length,
+        },
+        obraResponse?.estado ?? null,
+      )
+
+      setProjectWorkflowContext(workflowContext)
+    } catch (error) {
+      setProjectWorkflowContext(null)
+      setMessage({ tone: 'error', text: error instanceof Error ? error.message : 'No se pudo construir el contexto BIM de la obra activa.' })
+    } finally {
+      setLoadingProjectWorkflow(false)
+    }
+  }, [selectedObraFromProjects, token])
+
+  useEffect(() => {
+    void loadProjectWorkflowContext()
+  }, [loadProjectWorkflowContext, activeSection])
+
+  useEffect(() => {
     const current = searchParams.get('section')
-    if (current === activeSection) return
     const next = new URLSearchParams(searchParams)
-    next.set('section', activeSection)
+    if (current !== activeSection) {
+      next.set('section', activeSection)
+    }
+    if (selectedObraFromProjects) next.set('obra', selectedObraFromProjects)
+    else next.delete('obra')
+    if (selectedObraNameFromProjects) next.set('obraNombre', selectedObraNameFromProjects)
+    else next.delete('obraNombre')
+    if (next.toString() === searchParams.toString()) return
     setSearchParams(next, { replace: true })
-  }, [activeSection, searchParams, setSearchParams])
+  }, [activeSection, searchParams, selectedObraFromProjects, selectedObraNameFromProjects, setSearchParams])
 
   useEffect(() => {
     let active = true
@@ -684,41 +1190,38 @@ function ProviderDashboard({ user, token, onLogout }: ProviderDashboardProps) {
     }
   }
 
-  function handleOpenProjectBudget(project: { id: string; nombre: string }, target: 'partidas' | 'presupuestos-sin-apu' | 'presupuestos-aumentos' | 'presupuestos-disminuciones' | 'obras-extras' | 'memorias-descriptivas' | 'reportes-consolidados' | 'cierre-obra' | 'control-mediciones' | 'valuaciones' | 'computos-metricos' | 'reconsideracion-precios' = 'partidas') {
+  function handleOpenProjectBudget(project: { id: string; nombre: string }, target: 'projects' | 'capitulos' | 'partidas' | 'presupuestos-sin-apu' | 'presupuestos-aumentos' | 'presupuestos-disminuciones' | 'obras-extras' | 'memorias-descriptivas' | 'reportes-consolidados' | 'cierre-obra' | 'control-mediciones' | 'valuaciones' | 'computos-metricos' | 'reconsideracion-precios' = 'projects') {
     setSelectedObraFromProjects(project.id)
+    setSelectedObraNameFromProjects(project.nombre)
     setObrasOpen(true)
     setActiveSection(target)
     setMessage({
       tone: 'success',
-      text:
-        target === 'partidas'
-          ? `Proyecto ${project.nombre} listo para cargar presupuesto con APU.`
-          : target === 'presupuestos-sin-apu'
-            ? `Proyecto ${project.nombre} listo para cargar presupuesto sin A.P.U.`
-            : target === 'presupuestos-aumentos'
-              ? `Proyecto ${project.nombre} listo para cargar presupuesto de aumentos.`
-              : target === 'presupuestos-disminuciones'
-                ? `Proyecto ${project.nombre} listo para cargar presupuesto de disminuciones.`
-                : target === 'obras-extras'
-                  ? `Proyecto ${project.nombre} listo para cargar obras extras.`
-                : target === 'memorias-descriptivas'
-                  ? `Proyecto ${project.nombre} listo para cargar memorias descriptivas.`
-                : target === 'reportes-consolidados'
-                  ? `Proyecto ${project.nombre} listo para consultar reportes consolidados.`
-                : target === 'cierre-obra'
-                  ? `Proyecto ${project.nombre} listo para revisar cierre de obra.`
-                : target === 'control-mediciones'
-                  ? `Proyecto ${project.nombre} listo para cargar control de mediciones.`
-                  : target === 'valuaciones'
-                    ? `Proyecto ${project.nombre} listo para cargar valuaciones.`
-                    : target === 'reconsideracion-precios'
-                      ? `Proyecto ${project.nombre} listo para cargar reconsideración de precios.`
-                   : `Proyecto ${project.nombre} listo para cargar cómputos métricos.`,
+      text: `${project.nombre}. Obra activa fijada para continuar el flujo BIM por proyecto.`,
     })
   }
 
   function navigateSection(section: DashboardSection) {
+    if (bimSectionKeys.has(section)) setObrasOpen(true)
     setActiveSection(section)
+  }
+
+  function handleWorkflowStepOpen(section: DashboardSection) {
+    const access = stepAccessByKey.get(section)
+    if (access?.blockedReason) {
+      setMessage({ tone: 'error', text: access.blockedReason })
+      setActiveSection('projects')
+      setObrasOpen(true)
+      return
+    }
+
+    if (access?.warning) {
+      setMessage({ tone: 'error', text: access.warning })
+    } else if (access?.isRecommended) {
+      setMessage({ tone: 'success', text: 'Entraste al siguiente paso recomendado del flujo BIM.' })
+    }
+
+    navigateSection(section)
   }
 
   function formatReviewDate(value?: string | null) {
@@ -843,11 +1346,11 @@ function ProviderDashboard({ user, token, onLogout }: ProviderDashboardProps) {
 
                 <SidebarMenuItem>
                   <SidebarMenuButton
-                    isActive={activeSection === 'projects' || activeSection === 'partidas' || activeSection === 'presupuestos-sin-apu' || activeSection === 'presupuestos-aumentos' || activeSection === 'presupuestos-disminuciones' || activeSection === 'obras-extras' || activeSection === 'memorias-descriptivas' || activeSection === 'reportes-consolidados' || activeSection === 'cierre-obra' || activeSection === 'control-mediciones' || activeSection === 'valuaciones' || activeSection === 'reconsideracion-precios' || activeSection === 'computos-metricos'}
+                    isActive={bimSectionKeys.has(activeSection)}
                     onClick={() => setObrasOpen((open) => !open)}
                   >
                     <Building2 className="size-4" />
-                    <span className="flex-1">Gestión de obras</span>
+                    <span className="flex-1">Flujo BIM por obra</span>
                     <ChevronDown
                       className={`size-4 transition-transform duration-200 ${obrasOpen ? 'rotate-180' : ''}`}
                     />
@@ -855,123 +1358,20 @@ function ProviderDashboard({ user, token, onLogout }: ProviderDashboardProps) {
 
                   {obrasOpen ? (
                     <SidebarMenuSub>
-                      <SidebarMenuSubItem>
-                        <SidebarMenuSubButton
-                          isActive={activeSection === 'projects'}
-                          onClick={() => navigateSection('projects')}
-                        >
-                          <FolderOpen className="size-3.5" />
-                          Mis proyectos
-                        </SidebarMenuSubButton>
-                      </SidebarMenuSubItem>
-                      <SidebarMenuSubItem>
-                        <SidebarMenuSubButton
-                          isActive={activeSection === 'partidas'}
-                          onClick={() => navigateSection('partidas')}
-                        >
-                          <ListChecks className="size-3.5" />
-                          Presupuestos con A.P.U.
-                        </SidebarMenuSubButton>
-                      </SidebarMenuSubItem>
-                      <SidebarMenuSubItem>
-                        <SidebarMenuSubButton
-                          isActive={activeSection === 'presupuestos-sin-apu'}
-                          onClick={() => navigateSection('presupuestos-sin-apu')}
-                        >
-                          <ListChecks className="size-3.5" />
-                          Presupuestos sin A.P.U.
-                        </SidebarMenuSubButton>
-                      </SidebarMenuSubItem>
-                      <SidebarMenuSubItem>
-                        <SidebarMenuSubButton
-                          isActive={activeSection === 'presupuestos-aumentos'}
-                          onClick={() => navigateSection('presupuestos-aumentos')}
-                        >
-                          <ClipboardList className="size-3.5" />
-                          Presupuestos de Aumentos
-                        </SidebarMenuSubButton>
-                      </SidebarMenuSubItem>
-                      <SidebarMenuSubItem>
-                        <SidebarMenuSubButton
-                          isActive={activeSection === 'presupuestos-disminuciones'}
-                          onClick={() => navigateSection('presupuestos-disminuciones')}
-                        >
-                          <ClipboardList className="size-3.5" />
-                          Presupuestos de Disminuciones
-                        </SidebarMenuSubButton>
-                      </SidebarMenuSubItem>
-                      <SidebarMenuSubItem>
-                        <SidebarMenuSubButton
-                          isActive={activeSection === 'obras-extras'}
-                          onClick={() => navigateSection('obras-extras')}
-                        >
-                          <ClipboardList className="size-3.5" />
-                          Obras Extras
-                        </SidebarMenuSubButton>
-                      </SidebarMenuSubItem>
-                      <SidebarMenuSubItem>
-                        <SidebarMenuSubButton
-                          isActive={activeSection === 'memorias-descriptivas'}
-                          onClick={() => navigateSection('memorias-descriptivas')}
-                        >
-                          <FileText className="size-3.5" />
-                          Memorias Descriptivas
-                        </SidebarMenuSubButton>
-                      </SidebarMenuSubItem>
-                      <SidebarMenuSubItem>
-                        <SidebarMenuSubButton
-                          isActive={activeSection === 'reportes-consolidados'}
-                          onClick={() => navigateSection('reportes-consolidados')}
-                        >
-                          <FileText className="size-3.5" />
-                          Reportes Consolidados
-                        </SidebarMenuSubButton>
-                      </SidebarMenuSubItem>
-                      <SidebarMenuSubItem>
-                        <SidebarMenuSubButton
-                          isActive={activeSection === 'cierre-obra'}
-                          onClick={() => navigateSection('cierre-obra')}
-                        >
-                          <FileText className="size-3.5" />
-                          Cierre de Obra
-                        </SidebarMenuSubButton>
-                      </SidebarMenuSubItem>
-                      <SidebarMenuSubItem>
-                        <SidebarMenuSubButton
-                          isActive={activeSection === 'control-mediciones'}
-                          onClick={() => navigateSection('control-mediciones')}
-                        >
-                          <ClipboardList className="size-3.5" />
-                          Control de Mediciones
-                        </SidebarMenuSubButton>
-                      </SidebarMenuSubItem>
-                      <SidebarMenuSubItem>
-                        <SidebarMenuSubButton
-                          isActive={activeSection === 'valuaciones'}
-                          onClick={() => navigateSection('valuaciones')}
-                        >
-                          <ClipboardList className="size-3.5" />
-                          Valuaciones
-                        </SidebarMenuSubButton>
-                      </SidebarMenuSubItem>
-                      <SidebarMenuSubItem>
-                        <SidebarMenuSubButton
-                          isActive={activeSection === 'reconsideracion-precios'}
-                          onClick={() => navigateSection('reconsideracion-precios')}
-                        >
-                          <ClipboardList className="size-3.5" />
-                          Reconsideración de Precios
-                        </SidebarMenuSubButton>
-                      </SidebarMenuSubItem>
-                      <SidebarMenuSubItem>
-                        <SidebarMenuSubButton
-                          isActive={activeSection === 'computos-metricos'}
-                          onClick={() => navigateSection('computos-metricos')}
-                        >
-                          <Calculator className="size-3.5" />
-                          Cómputos Métricos
-                        </SidebarMenuSubButton>
-                      </SidebarMenuSubItem>
+                      {bimWorkflowSteps.map((step) => {
+                        const Icon = step.icon
+                        return (
+                          <SidebarMenuSubItem key={step.key}>
+                            <SidebarMenuSubButton
+                              isActive={activeSection === step.key}
+                              onClick={() => handleWorkflowStepOpen(step.key)}
+                            >
+                              <Icon className="size-3.5" />
+                              <span>{step.orderLabel}. {step.label}</span>
+                            </SidebarMenuSubButton>
+                          </SidebarMenuSubItem>
+                        )
+                      })}
                     </SidebarMenuSub>
                   ) : null}
                 </SidebarMenuItem>
@@ -1038,6 +1438,59 @@ function ProviderDashboard({ user, token, onLogout }: ProviderDashboardProps) {
               </div>
             ) : null}
 
+            {!loading && selectedObraFromProjects ? (
+              <Card className="border-border/60 bg-card/90 shadow-sm">
+                <CardContent className="flex flex-col gap-4 p-5 lg:flex-row lg:items-center lg:justify-between">
+                  <div className="space-y-2">
+                    <p className="text-sm font-semibold uppercase tracking-[0.16em] text-muted-foreground">Proyecto activo</p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-xl font-semibold tracking-tight">{selectedObraNameFromProjects || `Obra ${selectedObraFromProjects}`}</p>
+                      <Badge variant="outline" className="rounded-full px-3 py-1">ID {selectedObraFromProjects}</Badge>
+                      {currentWorkflowStage ? (
+                        <Badge className="rounded-full px-3 py-1">Fase actual: {currentWorkflowStage.label}</Badge>
+                      ) : null}
+                      {loadingProjectWorkflow ? <Badge variant="secondary" className="rounded-full px-3 py-1">Actualizando contexto BIM...</Badge> : null}
+                    </div>
+                    <p className="text-sm leading-6 text-muted-foreground">
+                      El contexto de obra queda fijado para que recorras el ciclo BIM en orden, sin perder el proyecto seleccionado.
+                    </p>
+                    {projectWorkflowContext ? (
+                      <div className="grid gap-2 pt-2 md:grid-cols-2 xl:grid-cols-4">
+                        <div className="rounded-2xl border border-border/60 bg-muted/20 px-4 py-3">
+                          <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Presupuesto original activo</p>
+                          <p className="mt-2 text-sm font-medium leading-6">{formatBudgetContext(projectWorkflowContext.presupuestoOriginal, 'Pendiente de definir')}</p>
+                        </div>
+                        <div className="rounded-2xl border border-border/60 bg-muted/20 px-4 py-3">
+                          <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Presupuesto modificado vigente</p>
+                          <p className="mt-2 text-sm font-medium leading-6">{formatBudgetContext(projectWorkflowContext.presupuestoModificado, 'Sin snapshot vigente')}</p>
+                        </div>
+                        <div className="rounded-2xl border border-border/60 bg-muted/20 px-4 py-3">
+                          <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Paso actual</p>
+                          <p className="mt-2 text-sm font-medium leading-6">{currentWorkflowStage?.label ?? 'Mis proyectos'}</p>
+                        </div>
+                        <div className="rounded-2xl border border-primary/20 bg-primary/5 px-4 py-3">
+                          <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Siguiente paso recomendado</p>
+                          <p className="mt-2 text-sm font-medium leading-6">{recommendedWorkflowStep?.label ?? 'Selecciona una obra'}</p>
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    <Button variant="outline" className="rounded-full" onClick={() => navigateSection('projects')}>
+                      Cambiar proyecto
+                    </Button>
+                    {recommendedWorkflowStep && recommendedWorkflowStep.key !== activeSection ? (
+                      <Button className="rounded-full" onClick={() => handleWorkflowStepOpen(recommendedWorkflowStep.key)}>
+                        Siguiente paso recomendado
+                        <ArrowRight className="size-4" />
+                      </Button>
+                    ) : null}
+                  </div>
+                </CardContent>
+              </Card>
+            ) : null}
+
             {loading ? (
               <Card className="border-border/60 bg-card/90 shadow-sm">
                 <CardContent className="flex min-h-[320px] items-center justify-center gap-3 p-6 text-muted-foreground">
@@ -1048,15 +1501,33 @@ function ProviderDashboard({ user, token, onLogout }: ProviderDashboardProps) {
             ) : null}
 
             {!loading && activeSection === 'projects' ? (
-              <ProjectsManagementPanel user={user} token={token} onMessage={setMessage} onOpenBudget={handleOpenProjectBudget} />
+              <ProjectsManagementPanel
+                user={user}
+                token={token}
+                onMessage={setMessage}
+                onOpenBudget={handleOpenProjectBudget}
+                activeProjectId={selectedObraFromProjects ?? undefined}
+                activeProjectWorkflow={projectWorkflowContext}
+              />
+            ) : null}
+
+            {!loading && activeSection === 'capitulos' ? (
+              <CapitulosPanel
+                user={user}
+                token={token}
+                onMessage={setMessage}
+                initialObraId={selectedObraFromProjects ?? undefined}
+                onWorkflowChange={loadProjectWorkflowContext}
+                onNavigateToBudget={(section) => navigateSection(section)}
+              />
             ) : null}
 
             {!loading && activeSection === 'partidas' ? (
-              <PartidasPanelWithBoundary user={user} token={token} onMessage={setMessage} initialObraId={selectedObraFromProjects ?? undefined} />
+              <PartidasPanelWithBoundary user={user} token={token} onMessage={setMessage} initialObraId={selectedObraFromProjects ?? undefined} onOpenChapters={() => navigateSection('capitulos')} />
             ) : null}
 
             {!loading && activeSection === 'presupuestos-sin-apu' ? (
-              <PresupuestosSinApuPanel user={user} token={token} onMessage={setMessage} initialObraId={selectedObraFromProjects ?? undefined} />
+              <PresupuestosSinApuPanel user={user} token={token} onMessage={setMessage} initialObraId={selectedObraFromProjects ?? undefined} onOpenChapters={() => navigateSection('capitulos')} />
             ) : null}
 
             {!loading && activeSection === 'presupuestos-aumentos' ? (
@@ -1072,7 +1543,7 @@ function ProviderDashboard({ user, token, onLogout }: ProviderDashboardProps) {
             ) : null}
 
             {!loading && activeSection === 'memorias-descriptivas' ? (
-              <MemoriasDescriptivasPanel user={user} token={token} onMessage={setMessage} initialObraId={selectedObraFromProjects ?? undefined} />
+              <MemoriasDescriptivasPanel user={user} token={token} onMessage={setMessage} initialObraId={selectedObraFromProjects ?? undefined} onWorkflowChange={loadProjectWorkflowContext} />
             ) : null}
 
             {!loading && activeSection === 'reportes-consolidados' ? (
@@ -1096,7 +1567,7 @@ function ProviderDashboard({ user, token, onLogout }: ProviderDashboardProps) {
             ) : null}
 
             {!loading && activeSection === 'computos-metricos' ? (
-              <ComputosMetricosPanel user={user} token={token} onMessage={setMessage} initialObraId={selectedObraFromProjects ?? undefined} />
+              <ComputosMetricosPanel user={user} token={token} onMessage={setMessage} initialObraId={selectedObraFromProjects ?? undefined} onWorkflowChange={loadProjectWorkflowContext} />
             ) : null}
 
             {!loading && (
@@ -1147,22 +1618,97 @@ function ProviderDashboard({ user, token, onLogout }: ProviderDashboardProps) {
                   })}
                 </div>
 
-                <Card className="border-border/60 bg-card/90 shadow-sm">
-                  <CardHeader>
-                    <CardTitle>Acciones recomendadas</CardTitle>
-                    <CardDescription>Completa el perfil y carga tu primera oferta para empezar a operar.</CardDescription>
-                  </CardHeader>
-                  <CardContent className="grid gap-4 md:grid-cols-2">
-                    <button className="rounded-2xl border border-border/70 bg-muted/25 p-5 text-left transition-colors hover:bg-muted/40" onClick={() => navigateSection('profile')} type="button">
-                      <p className="font-medium">Completar perfil de proveedor</p>
-                      <p className="mt-1 text-sm leading-6 text-muted-foreground">Actualiza datos comerciales, cobertura, licencia y servicio de emergencia.</p>
-                    </button>
-                    <button className="rounded-2xl border border-border/70 bg-muted/25 p-5 text-left transition-colors hover:bg-muted/40" onClick={() => navigateSection('catalog')} type="button">
-                      <p className="font-medium">Crear producto o servicio</p>
-                      <p className="mt-1 text-sm leading-6 text-muted-foreground">Publica una oferta con precio, descripcion, modalidad y cobertura.</p>
-                    </button>
-                  </CardContent>
-                </Card>
+                <div className="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_360px]">
+                  <Card className="border-border/60 bg-card/90 shadow-sm">
+                    <CardHeader>
+                      <CardTitle>Ruta BIM del proyecto</CardTitle>
+                      <CardDescription>
+                        {selectedObraFromProjects
+                          ? 'La obra activa ya tiene contexto fijado. Avanza por las fases en el orden recomendado.'
+                          : 'Selecciona primero un proyecto y luego recorre el flujo BIM de forma guiada.'}
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="grid gap-4">
+                      {selectedObraFromProjects ? (
+                        <div className="rounded-2xl border border-border/60 bg-muted/20 p-4">
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <div>
+                              <p className="text-sm text-muted-foreground">Avance del flujo</p>
+                              <p className="mt-1 text-2xl font-semibold tracking-tight">{projectWorkflowContext?.progress ?? 0}%</p>
+                            </div>
+                            {currentWorkflowStage ? (
+                              <div className="text-right">
+                                <p className="text-sm text-muted-foreground">Fase actual</p>
+                                <p className="mt-1 font-medium">{currentWorkflowStage.label}</p>
+                              </div>
+                            ) : null}
+                          </div>
+                        </div>
+                      ) : null}
+
+                      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                        {bimWorkflowSteps.map((step) => {
+                          const Icon = step.icon
+                          const isCurrent = activeSection === step.key
+                          const access = stepAccessByKey.get(step.key)
+                          const isCompleted = Boolean(projectWorkflowContext?.completedStageKeys.includes(step.stageKey)) && !isCurrent
+                          const isLocked = Boolean(access?.blockedReason)
+
+                          return (
+                            <button
+                              key={step.key}
+                              type="button"
+                              disabled={isLocked}
+                              onClick={() => handleWorkflowStepOpen(step.key)}
+                              className={`rounded-2xl border p-4 text-left transition-colors ${isCurrent ? 'border-primary bg-primary/8' : isCompleted ? 'border-primary/30 bg-primary/5' : 'border-border/70 bg-muted/20 hover:bg-muted/35'} ${isLocked ? 'cursor-not-allowed opacity-55' : ''}`}
+                            >
+                              <div className="flex items-center gap-3">
+                                <div className={`flex size-10 items-center justify-center rounded-2xl ${isCurrent || isCompleted ? 'bg-primary text-primary-foreground' : 'bg-background text-foreground'}`}>
+                                  <Icon className="size-4" />
+                                </div>
+                                <div>
+                                  <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Paso {step.orderLabel}</p>
+                                  <p className="font-medium">{step.label}</p>
+                                </div>
+                              </div>
+                              <p className="mt-3 text-sm leading-6 text-muted-foreground">{step.description}</p>
+                              {access?.isRecommended ? <p className="mt-3 text-xs font-medium uppercase tracking-[0.16em] text-primary">Siguiente paso recomendado</p> : null}
+                              {access?.warning ? <p className="mt-3 text-sm text-amber-700">{access.warning}</p> : null}
+                              {access?.blockedReason ? <p className="mt-3 text-sm text-rose-700">{access.blockedReason}</p> : null}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card className="border-border/60 bg-card/90 shadow-sm">
+                    <CardHeader>
+                      <CardTitle>Acciones recomendadas</CardTitle>
+                      <CardDescription>Combina operación BIM con tus tareas de proveedor sin perder el hilo principal.</CardDescription>
+                    </CardHeader>
+                    <CardContent className="grid gap-3">
+                      <button className="rounded-2xl border border-border/70 bg-muted/25 p-4 text-left transition-colors hover:bg-muted/40" onClick={() => navigateSection('projects')} type="button">
+                        <p className="font-medium">Abrir mis proyectos</p>
+                        <p className="mt-1 text-sm leading-6 text-muted-foreground">Selecciona la obra y fija el contexto del flujo BIM.</p>
+                      </button>
+                      <button className="rounded-2xl border border-border/70 bg-muted/25 p-4 text-left transition-colors hover:bg-muted/40" onClick={() => navigateSection('profile')} type="button">
+                        <p className="font-medium">Completar perfil de proveedor</p>
+                        <p className="mt-1 text-sm leading-6 text-muted-foreground">Actualiza datos comerciales, cobertura, licencia y servicio de emergencia.</p>
+                      </button>
+                      <button className="rounded-2xl border border-border/70 bg-muted/25 p-4 text-left transition-colors hover:bg-muted/40" onClick={() => navigateSection('catalog')} type="button">
+                        <p className="font-medium">Crear producto o servicio</p>
+                        <p className="mt-1 text-sm leading-6 text-muted-foreground">Publica una oferta con precio, descripción, modalidad y cobertura.</p>
+                      </button>
+                      {recommendedWorkflowStep ? (
+                        <Button className="rounded-full" onClick={() => handleWorkflowStepOpen(recommendedWorkflowStep.key)}>
+                          Ir al siguiente paso recomendado
+                          <ArrowRight className="size-4" />
+                        </Button>
+                      ) : null}
+                    </CardContent>
+                  </Card>
+                </div>
               </div>
             ) : null}
 

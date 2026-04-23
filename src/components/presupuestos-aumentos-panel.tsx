@@ -25,6 +25,15 @@ type BimPresupuesto = {
   tipo: string
 }
 
+type PresupuestoModificadoSnapshot = {
+  presupuesto_modificado: {
+    id: string
+    nombre: string
+    total_presupuesto: string
+    estado: string
+  } | null
+}
+
 type ReconsideracionDocumento = {
   id: string
   obra_id: string
@@ -118,6 +127,8 @@ function PresupuestosAumentosPanel({ token, onMessage, initialObraId }: Presupue
   const [savingDetalles, setSavingDetalles] = useState(false)
   const [searchText, setSearchText] = useState('')
   const [draftAumentos, setDraftAumentos] = useState<Record<string, string>>({})
+  const [syncingModificado, setSyncingModificado] = useState(false)
+  const [modificadoSnapshot, setModificadoSnapshot] = useState<PresupuestoModificadoSnapshot | null>(null)
 
   useEffect(() => {
     if (initialObraId) setSelectedObraId(initialObraId)
@@ -261,6 +272,18 @@ function PresupuestosAumentosPanel({ token, onMessage, initialObraId }: Presupue
     void loadResumen()
   }, [loadResumen])
 
+  useEffect(() => {
+    if (!selectedPresupuestoId) {
+      setModificadoSnapshot(null)
+      return
+    }
+
+    fetch(`${API_BASE_URL}/presupuestos/${selectedPresupuestoId}/modificado`, { headers })
+      .then((response) => response.json())
+      .then((data: PresupuestoModificadoSnapshot) => setModificadoSnapshot(data))
+      .catch(() => {})
+  }, [selectedPresupuestoId, headers])
+
   async function handleCreateDocumento() {
     if (!selectedObraId || !selectedPresupuestoId) return
     setCreatingDocumento(true)
@@ -333,10 +356,10 @@ function PresupuestosAumentosPanel({ token, onMessage, initialObraId }: Presupue
   }
 
   async function handlePrint() {
-    if (!selectedPresupuestoId || !selectedObraId) return
+    if (!selectedPresupuestoId || !selectedObraId || !selectedDocumentoId) return
     try {
       const response = await fetch(
-        `${API_BASE_URL}/reportes/pdf?type=modificado&obraId=${selectedObraId}&presupuestoId=${selectedPresupuestoId}`,
+        `${API_BASE_URL}/reportes/pdf?type=aumentos&obraId=${selectedObraId}&presupuestoId=${selectedPresupuestoId}&documentoId=${selectedDocumentoId}`,
         { headers },
       )
       if (!response.ok) throw new Error('No se pudo generar el PDF')
@@ -346,6 +369,45 @@ function PresupuestosAumentosPanel({ token, onMessage, initialObraId }: Presupue
       window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
     } catch (error) {
       onMessage({ tone: 'error', text: error instanceof Error ? error.message : 'No se pudo imprimir.' })
+    }
+  }
+
+  async function handleStatusChange(nextStatus: 'revisado' | 'aprobado') {
+    if (!selectedDocumentoId) return
+    try {
+      const response = await fetch(`${API_BASE_URL}/reconsideraciones/documentos/${selectedDocumentoId}/status`, {
+        method: 'PATCH',
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: nextStatus }),
+      })
+      if (!response.ok) throw new Error('No se pudo actualizar el estado del documento')
+      await loadResumen()
+      const snapshotResponse = await fetch(`${API_BASE_URL}/presupuestos/${selectedPresupuestoId}/modificado`, { headers })
+      if (snapshotResponse.ok) {
+        setModificadoSnapshot(await snapshotResponse.json() as PresupuestoModificadoSnapshot)
+      }
+      onMessage({ tone: 'success', text: `Documento ${nextStatus === 'revisado' ? 'enviado a revisión' : 'aprobado'}.` })
+    } catch (error) {
+      onMessage({ tone: 'error', text: error instanceof Error ? error.message : 'No se pudo actualizar el estado.' })
+    }
+  }
+
+  async function handleSyncModificado() {
+    if (!selectedPresupuestoId) return
+    setSyncingModificado(true)
+    try {
+      const response = await fetch(`${API_BASE_URL}/presupuestos/${selectedPresupuestoId}/modificado/sync`, {
+        method: 'POST',
+        headers,
+      })
+      if (!response.ok) throw new Error('No se pudo sincronizar el presupuesto modificado')
+      const data = await response.json() as PresupuestoModificadoSnapshot
+      setModificadoSnapshot(data)
+      onMessage({ tone: 'success', text: 'Presupuesto modificado sincronizado.' })
+    } catch (error) {
+      onMessage({ tone: 'error', text: error instanceof Error ? error.message : 'No se pudo sincronizar el presupuesto modificado.' })
+    } finally {
+      setSyncingModificado(false)
     }
   }
 
@@ -448,6 +510,13 @@ function PresupuestosAumentosPanel({ token, onMessage, initialObraId }: Presupue
           <MetricCard label="Disminuciones" value={resumen?.resumen.disminuciones ?? '0'} />
           <MetricCard label="Modificado" value={resumen?.resumen.modificado ?? (selectedPresupuesto?.total_presupuesto ?? '0')} tone="primary" />
         </CardContent>
+        {modificadoSnapshot?.presupuesto_modificado ? (
+          <CardContent className="pt-0">
+            <p className="text-xs text-muted-foreground">
+              Snapshot formal activo: {modificadoSnapshot.presupuesto_modificado.nombre} · Total {fmtNum(modificadoSnapshot.presupuesto_modificado.total_presupuesto)}
+            </p>
+          </CardContent>
+        ) : null}
       </Card>
 
       <Card className="border-border/60 bg-card/90 shadow-sm">
@@ -474,9 +543,22 @@ function PresupuestosAumentosPanel({ token, onMessage, initialObraId }: Presupue
             </div>
 
             <div className="flex items-center gap-2">
+              <div className="rounded-full border border-border/60 px-3 py-2 text-xs uppercase tracking-wide text-muted-foreground">
+                {resumen?.documento.status ?? 'borrador'}
+              </div>
               <Button variant="outline" className="rounded-full" onClick={handleSaveHeader} disabled={!selectedDocumentoId}>
                 <Pencil className="size-4" />
                 Guardar cabecera
+              </Button>
+              <Button variant="outline" className="rounded-full" onClick={() => void handleStatusChange('revisado')} disabled={!selectedDocumentoId || !resumen || resumen.documento.status !== 'borrador'}>
+                Enviar a revisión
+              </Button>
+              <Button variant="outline" className="rounded-full" onClick={() => void handleStatusChange('aprobado')} disabled={!selectedDocumentoId || !resumen || resumen.documento.status !== 'revisado'}>
+                Aprobar
+              </Button>
+              <Button variant="outline" className="rounded-full" onClick={() => void handleSyncModificado()} disabled={!selectedPresupuestoId || syncingModificado}>
+                {syncingModificado ? <LoaderCircle className="size-4 animate-spin" /> : null}
+                Sincronizar modificado
               </Button>
               <Button className="rounded-full" onClick={handleSaveDetalles} disabled={!selectedDocumentoId || savingDetalles || !resumen}>
                 {savingDetalles ? <LoaderCircle className="size-4 animate-spin" /> : <Save className="size-4" />}

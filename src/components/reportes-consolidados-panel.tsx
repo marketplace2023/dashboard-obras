@@ -8,12 +8,23 @@ import { API_BASE_URL, type AuthUser } from '@/lib/auth'
 
 type MsgState = { tone: 'success' | 'error'; text: string } | null
 type BimObra = { id: string; codigo: string; nombre: string }
-type BimPresupuesto = { id: string; nombre: string; version: number; tipo: string }
+type BimPresupuesto = { id: string; nombre: string; version: number; tipo: string; total_presupuesto?: string; es_oficial?: boolean | null }
 type Comparativo = {
+  original_oficial?: BimPresupuesto | null
+  trazabilidad_modificado?: Array<{
+    documento_id: string
+    tipo: string
+    numero: number
+    fecha: string
+    titulo: string
+    status: string
+  }>
   summary: {
     original: string
     modificado: string
     valuado: string
+    valuado_reconsiderado: string
+    reconsideracion_diferencial: string
     computado: string
     medido: string
     cantidad_modificada: string
@@ -21,6 +32,11 @@ type Comparativo = {
       extras: string
       aumentos: string
       disminuciones: string
+    }
+    formalizacion: {
+      mediciones_borrador: number
+      valuaciones_borrador: number
+      reconsideraciones_borrador: number
     }
   }
   detalle: Array<{
@@ -38,10 +54,12 @@ type Comparativo = {
     computado: string
     medido: string
     valuado: string
+    reconsideracion_diferencial: string
     precio_unitario: string
     monto_original: string
     monto_modificado: string
     monto_valuado: string
+    monto_valuado_reconsiderado: string
   }>
 }
 
@@ -89,12 +107,18 @@ function ReportesConsolidadosPanel({ token, onMessage, initialObraId }: Props) {
     Promise.all([
       fetch(`${API_BASE_URL}/presupuestos/obra/${selectedObraId}?tipo=obra`, { headers }),
       fetch(`${API_BASE_URL}/presupuestos/obra/${selectedObraId}?tipo=sin_apu`, { headers }),
+      fetch(`${API_BASE_URL}/presupuestos/obra/${selectedObraId}?tipo=modificado`, { headers }),
     ])
-      .then(async ([obraRes, sinApuRes]) => {
+      .then(async ([obraRes, sinApuRes, modificadoRes]) => {
         const obraData = await obraRes.json() as unknown
         const sinApuData = await sinApuRes.json() as unknown
-        const list = [...unwrapList<BimPresupuesto>(obraData), ...unwrapList<BimPresupuesto>(sinApuData)]
-        const sorted = [...list].sort((a, b) => Number(b.version) - Number(a.version))
+        const modificadoData = await modificadoRes.json() as unknown
+        const list = [...unwrapList<BimPresupuesto>(obraData), ...unwrapList<BimPresupuesto>(sinApuData), ...unwrapList<BimPresupuesto>(modificadoData)]
+        const sorted = [...list].sort((a, b) => {
+          const officialDiff = Number(b.es_oficial ? 1 : 0) - Number(a.es_oficial ? 1 : 0)
+          if (officialDiff !== 0) return officialDiff
+          return Number(b.version) - Number(a.version)
+        })
         setPresupuestos(sorted)
         setSelectedPresupuestoId(sorted[0] ? String(sorted[0].id) : '')
       })
@@ -148,9 +172,9 @@ function ReportesConsolidadosPanel({ token, onMessage, initialObraId }: Props) {
             <Label className="text-xs">Presupuesto</Label>
             <select value={selectedPresupuestoId} onChange={(event) => setSelectedPresupuestoId(event.target.value)} className="h-10 rounded-xl border border-border/70 bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40">
               <option value="">Selecciona un presupuesto</option>
-              {presupuestos.map((presupuesto) => <option key={presupuesto.id} value={presupuesto.id}>{presupuesto.tipo === 'sin_apu' ? 'Sin A.P.U.' : 'Con A.P.U.'} · v{presupuesto.version} · {presupuesto.nombre}</option>)}
-            </select>
-          </div>
+                {presupuestos.map((presupuesto) => <option key={presupuesto.id} value={presupuesto.id}>{presupuesto.tipo === 'sin_apu' ? 'Sin A.P.U.' : presupuesto.tipo === 'modificado' ? 'Modificado' : 'Con A.P.U.'} · v{presupuesto.version} · {presupuesto.nombre}{presupuesto.es_oficial ? ' · oficial' : ''}</option>)}
+              </select>
+            </div>
           <div className="flex items-end gap-2 lg:justify-end">
             <Button variant="outline" className="rounded-full" onClick={() => void handlePrint('comparativo')} disabled={!selectedPresupuestoId}><FileDown className="size-4" />PDF comparativo</Button>
             <Button className="rounded-full" onClick={() => void handlePrint('modificado')} disabled={!selectedPresupuestoId}><FileDown className="size-4" />PDF modificado</Button>
@@ -162,13 +186,32 @@ function ReportesConsolidadosPanel({ token, onMessage, initialObraId }: Props) {
         <CardHeader>
           <CardTitle className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Resumen global</CardTitle>
         </CardHeader>
-        <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+        <CardContent className="pt-0">
+          <div className="grid gap-2 md:grid-cols-2">
+            <div className="rounded-2xl border border-border/50 bg-background/70 px-4 py-3 text-sm">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">Original oficial</p>
+              <p className="mt-1 font-medium text-foreground">{data?.original_oficial ? `v${data.original_oficial.version} · ${data.original_oficial.nombre}` : 'No formalizado'}</p>
+            </div>
+            <div className="rounded-2xl border border-border/50 bg-background/70 px-4 py-3 text-sm">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">Fuentes del modificado</p>
+              <p className="mt-1 text-foreground">{data?.trazabilidad_modificado?.length ? data.trazabilidad_modificado.map((item) => `${item.tipo} #${item.numero}`).join(', ') : 'Sin documentos fuente formalizados'}</p>
+            </div>
+          </div>
+        </CardContent>
+        <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-8">
           <MetricCard label="Original" value={data?.summary.original ?? '0'} />
           <MetricCard label="Modificado" value={data?.summary.modificado ?? '0'} tone="primary" />
           <MetricCard label="Valuado" value={data?.summary.valuado ?? '0'} />
+          <MetricCard label="Rec. precios" value={data?.summary.reconsideracion_diferencial ?? '0'} />
+          <MetricCard label="Valuado + rec." value={data?.summary.valuado_reconsiderado ?? '0'} />
           <MetricCard label="Computado" value={data?.summary.computado ?? '0'} decimals={4} />
           <MetricCard label="Medido" value={data?.summary.medido ?? '0'} decimals={4} />
           <MetricCard label="Cant. Modificada" value={data?.summary.cantidad_modificada ?? '0'} decimals={4} />
+        </CardContent>
+        <CardContent className="pt-0">
+          <p className="text-xs text-muted-foreground">
+            Pendientes en borrador: mediciones {data?.summary.formalizacion.mediciones_borrador ?? 0}, valuaciones {data?.summary.formalizacion.valuaciones_borrador ?? 0}, reconsideraciones {data?.summary.formalizacion.reconsideraciones_borrador ?? 0}
+          </p>
         </CardContent>
       </Card>
 
@@ -183,9 +226,9 @@ function ReportesConsolidadosPanel({ token, onMessage, initialObraId }: Props) {
             ) : !data ? (
               <div className="px-4 py-16 text-center text-sm text-muted-foreground">Selecciona una obra y un presupuesto para ver el consolidado.</div>
             ) : (
-              <table className="min-w-[1680px] divide-y divide-border/50 text-sm">
-                <thead className="bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
-                  <tr>
+               <table className="min-w-[1880px] divide-y divide-border/50 text-sm">
+                 <thead className="bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
+                   <tr>
                     <th className="px-3 py-2 text-left">Nro.</th>
                     <th className="px-3 py-2 text-left">Capítulo</th>
                     <th className="px-3 py-2 text-left">Código</th>
@@ -198,11 +241,13 @@ function ReportesConsolidadosPanel({ token, onMessage, initialObraId }: Props) {
                     <th className="px-3 py-2 text-right">Modificado</th>
                     <th className="px-3 py-2 text-right">Computado</th>
                     <th className="px-3 py-2 text-right">Medido</th>
-                    <th className="px-3 py-2 text-right">Valuado</th>
-                    <th className="px-3 py-2 text-right">Monto Modif.</th>
-                    <th className="px-3 py-2 text-right">Monto Valuado</th>
-                  </tr>
-                </thead>
+                     <th className="px-3 py-2 text-right">Valuado</th>
+                     <th className="px-3 py-2 text-right">Rec. Precios</th>
+                     <th className="px-3 py-2 text-right">Monto Modif.</th>
+                     <th className="px-3 py-2 text-right">Monto Valuado</th>
+                     <th className="px-3 py-2 text-right">Monto Val. + Rec.</th>
+                   </tr>
+                 </thead>
                 <tbody className="divide-y divide-border/30">
                   {data.detalle.map((row) => (
                     <tr key={row.partida_id} className="bg-background/70 hover:bg-muted/10">
@@ -216,13 +261,15 @@ function ReportesConsolidadosPanel({ token, onMessage, initialObraId }: Props) {
                       <td className="px-3 py-2 text-right tabular-nums">{fmtNum(row.aumentos, 4)}</td>
                       <td className="px-3 py-2 text-right tabular-nums">{fmtNum(row.disminuciones, 4)}</td>
                       <td className="px-3 py-2 text-right tabular-nums font-semibold">{fmtNum(row.presupuesto_modificado, 4)}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">{fmtNum(row.computado, 4)}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">{fmtNum(row.medido, 4)}</td>
-                      <td className="px-3 py-2 text-right tabular-nums text-primary">{fmtNum(row.valuado, 4)}</td>
-                      <td className="px-3 py-2 text-right tabular-nums font-semibold">{fmtNum(row.monto_modificado, 2)}</td>
-                      <td className="px-3 py-2 text-right tabular-nums font-semibold text-primary">{fmtNum(row.monto_valuado, 2)}</td>
-                    </tr>
-                  ))}
+                       <td className="px-3 py-2 text-right tabular-nums">{fmtNum(row.computado, 4)}</td>
+                       <td className="px-3 py-2 text-right tabular-nums">{fmtNum(row.medido, 4)}</td>
+                       <td className="px-3 py-2 text-right tabular-nums text-primary">{fmtNum(row.valuado, 4)}</td>
+                       <td className="px-3 py-2 text-right tabular-nums">{fmtNum(row.reconsideracion_diferencial, 2)}</td>
+                       <td className="px-3 py-2 text-right tabular-nums font-semibold">{fmtNum(row.monto_modificado, 2)}</td>
+                       <td className="px-3 py-2 text-right tabular-nums font-semibold text-primary">{fmtNum(row.monto_valuado, 2)}</td>
+                       <td className="px-3 py-2 text-right tabular-nums font-semibold">{fmtNum(row.monto_valuado_reconsiderado, 2)}</td>
+                     </tr>
+                   ))}
                 </tbody>
               </table>
             )}

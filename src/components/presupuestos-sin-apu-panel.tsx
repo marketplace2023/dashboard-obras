@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { FileDown, ListPlus, LoaderCircle, Pencil, Plus, Search, Trash2, X } from 'lucide-react'
+import { Check, FileDown, ListPlus, LoaderCircle, Pencil, Plus, Search, Trash2, X } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -19,10 +19,25 @@ type BimObra = {
 type BimPresupuesto = {
   id: string
   nombre: string
+  tipo?: string
   estado: string
   total_presupuesto: string
   moneda: string
   version: number
+  es_oficial?: boolean | null
+}
+
+type PresupuestoFormalizacion = {
+  original_oficial: BimPresupuesto | null
+  modificado_vigente: BimPresupuesto | null
+  fuentes_modificado: Array<{
+    documento_id: string
+    tipo: string
+    numero: number
+    fecha: string
+    titulo: string
+    status: string
+  }>
 }
 
 type BimPartidaRow = {
@@ -41,7 +56,9 @@ type BimCapituloNodo = {
   codigo: string
   nombre: string
   orden: number
+  parent_id?: string | null
   partidas: BimPartidaRow[]
+  children?: BimCapituloNodo[]
 }
 
 type PresupuestoArbol = BimPresupuesto & { capitulos: BimCapituloNodo[] }
@@ -60,9 +77,8 @@ type PresupuestosSinApuPanelProps = {
   token: string
   onMessage: (msg: MsgState) => void
   initialObraId?: string
+  onOpenChapters?: () => void
 }
-
-const DEFAULT_CAPITULO = { codigo: '01', nombre: 'General' }
 
 function unwrapList<T>(data: unknown): T[] {
   if (Array.isArray(data)) return data as T[]
@@ -79,7 +95,7 @@ function fmtNum(value: string | number, decimals = 2) {
   })
 }
 
-function PresupuestosSinApuPanel({ token, onMessage, initialObraId }: PresupuestosSinApuPanelProps) {
+function PresupuestosSinApuPanel({ token, onMessage, initialObraId, onOpenChapters }: PresupuestosSinApuPanelProps) {
   const headers = useMemo(() => ({ Authorization: `Bearer ${token}` }), [token])
 
   const [obras, setObras] = useState<BimObra[]>([])
@@ -89,6 +105,8 @@ function PresupuestosSinApuPanel({ token, onMessage, initialObraId }: Presupuest
   const [presupuestos, setPresupuestos] = useState<BimPresupuesto[]>([])
   const [selectedPresupuestoId, setSelectedPresupuestoId] = useState('')
   const [loadingPresupuestos, setLoadingPresupuestos] = useState(false)
+  const [formalizacion, setFormalizacion] = useState<PresupuestoFormalizacion | null>(null)
+  const [officializingPresupuesto, setOfficializingPresupuesto] = useState(false)
   const [showNewPres, setShowNewPres] = useState(false)
   const [newPresNombre, setNewPresNombre] = useState('')
   const [creatingPres, setCreatingPres] = useState(false)
@@ -111,6 +129,8 @@ function PresupuestosSinApuPanel({ token, onMessage, initialObraId }: Presupuest
   const [editingPartida, setEditingPartida] = useState<BimPartidaRow | null>(null)
   const [editCantidad, setEditCantidad] = useState('1')
   const [editPrecioUnitario, setEditPrecioUnitario] = useState('0')
+  const [editCapituloId, setEditCapituloId] = useState('')
+  const [editOrden, setEditOrden] = useState('0')
   const [savingPartida, setSavingPartida] = useState(false)
   const [deletingPartidaId, setDeletingPartidaId] = useState<string | null>(null)
 
@@ -144,6 +164,7 @@ function PresupuestosSinApuPanel({ token, onMessage, initialObraId }: Presupuest
     if (!selectedObraId) {
       setPresupuestos([])
       setSelectedPresupuestoId('')
+      setFormalizacion(null)
       setArbol(null)
       return
     }
@@ -153,13 +174,23 @@ function PresupuestosSinApuPanel({ token, onMessage, initialObraId }: Presupuest
     setSelectedPresupuestoId('')
     setArbol(null)
 
-    fetch(`${API_BASE_URL}/presupuestos/obra/${selectedObraId}?tipo=sin_apu`, { headers })
-      .then((response) => response.json())
-      .then((data: unknown) => {
+    Promise.all([
+      fetch(`${API_BASE_URL}/presupuestos/obra/${selectedObraId}?tipo=sin_apu`, { headers }),
+      fetch(`${API_BASE_URL}/presupuestos/obra/${selectedObraId}/formalizacion`, { headers }),
+    ])
+      .then(async ([presupuestosResponse, formalizacionResponse]) => {
+        const data = await presupuestosResponse.json() as unknown
+        const formalizacionData = await formalizacionResponse.json() as PresupuestoFormalizacion
         if (!active) return
-        const list = unwrapList<BimPresupuesto>(data)
+        const list = unwrapList<BimPresupuesto>(data).sort((a, b) => {
+          const officialDiff = Number(b.es_oficial ? 1 : 0) - Number(a.es_oficial ? 1 : 0)
+          if (officialDiff !== 0) return officialDiff
+          return Number(b.version) - Number(a.version)
+        })
         setPresupuestos(list)
-        if (list[0]) setSelectedPresupuestoId(String(list[0].id))
+        setFormalizacion(formalizacionData)
+        if (formalizacionData.original_oficial?.tipo === 'sin_apu') setSelectedPresupuestoId(String(formalizacionData.original_oficial.id))
+        else if (list[0]) setSelectedPresupuestoId(String(list[0].id))
       })
       .catch(() => {
         if (!active) return
@@ -218,19 +249,29 @@ function PresupuestosSinApuPanel({ token, onMessage, initialObraId }: Presupuest
     }
   }, [headers])
 
+  const capitulosPlano = useMemo(() => {
+    if (!arbol) return [] as Array<BimCapituloNodo & { depth: number }>
+    const rows: Array<BimCapituloNodo & { depth: number }> = []
+    const walk = (nodes: BimCapituloNodo[], depth: number) => {
+      for (const node of nodes) {
+        rows.push({ ...node, depth })
+        if (node.children?.length) walk(node.children, depth + 1)
+      }
+    }
+    walk(arbol.capitulos ?? [], 0)
+    return rows
+  }, [arbol])
+
   useEffect(() => {
     if (!selectedPresupuestoId || loadingArbol || !arbol) return
-    if (arbol.capitulos[0]) {
-      if (selectedCapituloId !== arbol.capitulos[0].id) {
-        setSelectedCapituloId(arbol.capitulos[0].id)
-      }
+    if (!capitulosPlano.length) {
+      if (selectedCapituloId) setSelectedCapituloId('')
       return
     }
-
-    void ensureDefaultCapitulo(selectedPresupuestoId, arbol).catch((error) => {
-      onMessage({ tone: 'error', text: error instanceof Error ? error.message : 'No se pudo preparar el presupuesto.' })
-    })
-  }, [selectedPresupuestoId, arbol, loadingArbol, selectedCapituloId, onMessage])
+    if (!selectedCapituloId || !capitulosPlano.some((capitulo) => capitulo.id === selectedCapituloId)) {
+      setSelectedCapituloId(capitulosPlano[0].id)
+    }
+  }, [selectedPresupuestoId, arbol, loadingArbol, selectedCapituloId, capitulosPlano])
 
   const categorias = useMemo(() => {
     const set = new Set<string>()
@@ -252,14 +293,19 @@ function PresupuestosSinApuPanel({ token, onMessage, initialObraId }: Presupuest
 
   const partidasPlano = useMemo(() => {
     if (!arbol) return [] as Array<BimPartidaRow & { capitulo_codigo: string; capitulo_nombre: string }>
-    return arbol.capitulos.flatMap((capitulo) =>
+    return capitulosPlano.flatMap((capitulo) =>
       capitulo.partidas.map((partida) => ({
         ...partida,
         capitulo_codigo: capitulo.codigo,
         capitulo_nombre: capitulo.nombre,
       })),
     )
-  }, [arbol])
+  }, [arbol, capitulosPlano])
+
+  const selectedPresupuesto = useMemo(
+    () => presupuestos.find((item) => String(item.id) === selectedPresupuestoId) ?? null,
+    [presupuestos, selectedPresupuestoId],
+  )
 
   async function handleCreatePresupuesto() {
     if (!selectedObraId || !newPresNombre.trim()) return
@@ -305,27 +351,38 @@ function PresupuestosSinApuPanel({ token, onMessage, initialObraId }: Presupuest
     }
   }
 
-  async function ensureDefaultCapitulo(presupuestoId = selectedPresupuestoId, tree = arbol) {
-    if (!presupuestoId) throw new Error('No hay presupuesto seleccionado')
-    if (tree?.capitulos?.[0]) {
-      setSelectedCapituloId(tree.capitulos[0].id)
-      return tree.capitulos[0].id
+  async function handleOfficializePresupuesto() {
+    if (!selectedPresupuestoId || !selectedObraId) return
+    setOfficializingPresupuesto(true)
+    try {
+      const response = await fetch(`${API_BASE_URL}/presupuestos/${selectedPresupuestoId}/aprobar`, {
+        method: 'PATCH',
+        headers,
+      })
+      if (!response.ok) throw new Error('No se pudo oficializar el presupuesto original')
+
+      const [budgetsResponse, formalizacionResponse] = await Promise.all([
+        fetch(`${API_BASE_URL}/presupuestos/obra/${selectedObraId}?tipo=sin_apu`, { headers }),
+        fetch(`${API_BASE_URL}/presupuestos/obra/${selectedObraId}/formalizacion`, { headers }),
+      ])
+      const budgetsData = await budgetsResponse.json() as unknown
+      const formalizacionData = await formalizacionResponse.json() as PresupuestoFormalizacion
+      const list = unwrapList<BimPresupuesto>(budgetsData).sort((a, b) => {
+        const officialDiff = Number(b.es_oficial ? 1 : 0) - Number(a.es_oficial ? 1 : 0)
+        if (officialDiff !== 0) return officialDiff
+        return Number(b.version) - Number(a.version)
+      })
+      setPresupuestos(list)
+      setFormalizacion(formalizacionData)
+      if (formalizacionData.original_oficial?.tipo === 'sin_apu') {
+        setSelectedPresupuestoId(String(formalizacionData.original_oficial.id))
+      }
+      onMessage({ tone: 'success', text: 'Presupuesto original oficializado.' })
+    } catch (error) {
+      onMessage({ tone: 'error', text: error instanceof Error ? error.message : 'No se pudo oficializar el presupuesto.' })
+    } finally {
+      setOfficializingPresupuesto(false)
     }
-
-    const response = await fetch(`${API_BASE_URL}/presupuestos/${presupuestoId}/capitulos`, {
-      method: 'POST',
-      headers: { ...headers, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ codigo: DEFAULT_CAPITULO.codigo, nombre: DEFAULT_CAPITULO.nombre, orden: 1 }),
-    })
-
-    if (!response.ok) {
-      throw new Error('No se pudo crear el capítulo técnico del presupuesto')
-    }
-
-    const capitulo = await response.json() as BimCapituloNodo
-    setSelectedCapituloId(capitulo.id)
-    await loadArbol()
-    return capitulo.id
   }
 
   function handleSelectPartida(item: BimCatalogoPartida) {
@@ -336,9 +393,13 @@ function PresupuestosSinApuPanel({ token, onMessage, initialObraId }: Presupuest
 
   async function handleAddPartida() {
     if (!selectedPartida) return
+    if (!selectedCapituloId) {
+      onMessage({ tone: 'error', text: 'Selecciona un capítulo o subcapítulo antes de agregar la partida.' })
+      return
+    }
     setAddingPartida(true)
     try {
-      const capituloId = selectedCapituloId || await ensureDefaultCapitulo()
+      const capituloId = selectedCapituloId
       const response = await fetch(`${API_BASE_URL}/presupuestos/capitulos/${capituloId}/partidas`, {
         method: 'POST',
         headers: { ...headers, 'Content-Type': 'application/json' },
@@ -368,6 +429,8 @@ function PresupuestosSinApuPanel({ token, onMessage, initialObraId }: Presupuest
     setEditingPartida(partida)
     setEditCantidad(partida.cantidad)
     setEditPrecioUnitario(partida.precio_unitario)
+    setEditCapituloId(capitulosPlano.find((capitulo) => capitulo.partidas.some((item) => item.id === partida.id))?.id ?? selectedCapituloId)
+    setEditOrden(String(partida.orden ?? 0))
   }
 
   async function handleSavePartida() {
@@ -377,7 +440,7 @@ function PresupuestosSinApuPanel({ token, onMessage, initialObraId }: Presupuest
       const response = await fetch(`${API_BASE_URL}/presupuestos/partidas/${editingPartida.id}`, {
         method: 'PATCH',
         headers: { ...headers, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cantidad: editCantidad, precio_unitario: editPrecioUnitario }),
+        body: JSON.stringify({ cantidad: editCantidad, precio_unitario: editPrecioUnitario, capitulo_id: editCapituloId, orden: Number(editOrden || 0) }),
       })
       if (!response.ok) throw new Error('No se pudo guardar la partida')
       await loadArbol()
@@ -410,8 +473,8 @@ function PresupuestosSinApuPanel({ token, onMessage, initialObraId }: Presupuest
 
   return (
     <>
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
-        <div className="grid content-start gap-4">
+    <div className="grid gap-6 xl:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
+      <div className="grid min-w-0 content-start gap-4">
           <Card className="border-border/60 bg-card/90 shadow-sm">
             <CardHeader className="pb-3">
               <CardTitle className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">1 · Proyecto</CardTitle>
@@ -444,9 +507,9 @@ function PresupuestosSinApuPanel({ token, onMessage, initialObraId }: Presupuest
           {selectedObraId ? (
             <Card className="border-border/60 bg-card/90 shadow-sm">
               <CardHeader className="pb-3">
-                <div className="flex items-center justify-between gap-2">
+                <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
                   <CardTitle className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">2 · Presupuesto sin A.P.U.</CardTitle>
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     {selectedPresupuestoId ? (
                       <Button variant="outline" size="sm" className="h-7 rounded-full px-3 text-xs" onClick={handlePrintPresupuesto} disabled={printingPdf}>
                         {printingPdf ? <LoaderCircle className="size-3 animate-spin" /> : <FileDown className="size-3" />}
@@ -456,6 +519,14 @@ function PresupuestosSinApuPanel({ token, onMessage, initialObraId }: Presupuest
                     <Button variant="outline" size="sm" className="h-7 rounded-full px-3 text-xs" onClick={() => setShowNewPres((current) => !current)}>
                       <Plus className="size-3" />
                       Nuevo
+                    </Button>
+                    <Button variant="outline" size="sm" className="h-7 rounded-full px-3 text-xs" onClick={() => void handleOfficializePresupuesto()} disabled={!selectedPresupuestoId || officializingPresupuesto || Boolean(selectedPresupuesto?.es_oficial)}>
+                      {officializingPresupuesto ? <LoaderCircle className="size-3 animate-spin" /> : <Check className="size-3" />}
+                      Oficializar
+                    </Button>
+                    <Button variant="outline" size="sm" className="h-7 rounded-full px-3 text-xs" onClick={onOpenChapters} disabled={!selectedPresupuestoId}>
+                      <Plus className="size-3" />
+                      Ir a capítulos
                     </Button>
                   </div>
                 </div>
@@ -474,7 +545,7 @@ function PresupuestosSinApuPanel({ token, onMessage, initialObraId }: Presupuest
                   >
                     {presupuestos.map((presupuesto) => (
                       <option key={presupuesto.id} value={presupuesto.id}>
-                        v{presupuesto.version} · {presupuesto.nombre} [{presupuesto.estado}]
+                        v{presupuesto.version} · {presupuesto.nombre} [{presupuesto.estado}]{presupuesto.es_oficial ? ' · oficial' : ''}
                       </option>
                     ))}
                   </select>
@@ -505,6 +576,26 @@ function PresupuestosSinApuPanel({ token, onMessage, initialObraId }: Presupuest
                     </div>
                   </div>
                 ) : null}
+
+                {formalizacion?.original_oficial?.tipo === 'sin_apu' ? (
+                  <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 px-3 py-2 text-xs text-emerald-900">
+                    Presupuesto original oficial: v{formalizacion.original_oficial.version} · {formalizacion.original_oficial.nombre}
+                  </div>
+                ) : formalizacion?.original_oficial ? (
+                  <div className="rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2 text-xs text-slate-700">
+                    El presupuesto original oficial vigente de esta obra se formalizo en la variante con A.P.U.
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-amber-200 bg-amber-50/70 px-3 py-2 text-xs text-amber-900">
+                    Aun no hay un presupuesto original oficial por obra. Aprueba el presupuesto correcto para formalizarlo.
+                  </div>
+                )}
+
+                {formalizacion?.modificado_vigente ? (
+                  <div className="rounded-xl border border-sky-200 bg-sky-50/70 px-3 py-2 text-xs text-sky-900">
+                    Presupuesto modificado vigente: v{formalizacion.modificado_vigente.version} · {formalizacion.modificado_vigente.nombre}. Fuentes: {formalizacion.fuentes_modificado.length > 0 ? formalizacion.fuentes_modificado.map((item) => `${item.tipo} #${item.numero}`).join(', ') : 'sin documentos formalizados'}.
+                  </div>
+                ) : null}
               </CardContent>
             </Card>
           ) : null}
@@ -518,6 +609,31 @@ function PresupuestosSinApuPanel({ token, onMessage, initialObraId }: Presupuest
                 </div>
               </CardHeader>
               <CardContent className="grid gap-3">
+                {capitulosPlano.length > 0 ? (
+                  <div className="grid gap-2 rounded-xl border border-border/50 bg-muted/15 p-3">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                      <Label className="text-xs uppercase tracking-wide text-muted-foreground">Capítulo destino para nuevas partidas</Label>
+                      <Button type="button" variant="ghost" size="sm" className="h-7 rounded-full px-3 text-xs" onClick={onOpenChapters}>
+                        Gestionar capítulos
+                      </Button>
+                    </div>
+                    <select value={selectedCapituloId} onChange={(event) => setSelectedCapituloId(event.target.value)} className="w-full rounded-xl border border-border/70 bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40">
+                      {capitulosPlano.map((capitulo) => (
+                        <option key={capitulo.id} value={capitulo.id}>{`${'  '.repeat(capitulo.depth)}${capitulo.codigo} · ${capitulo.nombre}`}</option>
+                      ))}
+                    </select>
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-dashed border-border bg-muted/10 px-4 py-4 text-sm text-muted-foreground">
+                    <p>Crea capítulos o subcapítulos en el módulo `Capítulos` antes de cargar partidas en este presupuesto.</p>
+                    {onOpenChapters ? (
+                      <Button type="button" variant="outline" size="sm" className="mt-3 h-8 rounded-full px-3 text-xs" onClick={onOpenChapters}>
+                        Abrir módulo Capítulos
+                      </Button>
+                    ) : null}
+                  </div>
+                )}
+
                 {loadingArbol ? (
                   <div className="flex items-center gap-2 text-sm text-muted-foreground">
                     <LoaderCircle className="size-4 animate-spin" />
@@ -567,7 +683,7 @@ function PresupuestosSinApuPanel({ token, onMessage, initialObraId }: Presupuest
           ) : null}
         </div>
 
-        <div className="grid content-start gap-4">
+      <div className="grid min-w-0 content-start gap-4">
           <Card className="border-border/60 bg-card/90 shadow-sm">
             <CardHeader className="pb-3">
               <CardTitle className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Catálogo general de partidas</CardTitle>
@@ -676,9 +792,9 @@ function PresupuestosSinApuPanel({ token, onMessage, initialObraId }: Presupuest
                   </div>
                 ) : null}
 
-                <Button className="h-9 rounded-full" onClick={handleAddPartida} disabled={!selectedPresupuestoId || addingPartida || !cantidad || Number(cantidad) <= 0 || !precioUnitario || Number(precioUnitario) < 0}>
+                <Button className="h-9 rounded-full" onClick={handleAddPartida} disabled={!selectedPresupuestoId || !selectedCapituloId || addingPartida || !cantidad || Number(cantidad) <= 0 || !precioUnitario || Number(precioUnitario) < 0}>
                   {addingPartida ? <LoaderCircle className="size-4 animate-spin" /> : <ListPlus className="size-4" />}
-                  {selectedPresupuestoId ? 'Agregar partida' : 'Selecciona un presupuesto primero'}
+                  {selectedPresupuestoId ? selectedCapituloId ? 'Agregar partida' : 'Selecciona un capítulo' : 'Selecciona un presupuesto primero'}
                 </Button>
               </CardContent>
             </Card>
@@ -715,6 +831,22 @@ function PresupuestosSinApuPanel({ token, onMessage, initialObraId }: Presupuest
                 </div>
               </div>
 
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="grid gap-1">
+                  <Label className="text-xs">Capítulo</Label>
+                  <select value={editCapituloId} onChange={(event) => setEditCapituloId(event.target.value)} className="h-10 w-full rounded-xl border border-border/70 bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40">
+                    <option value="">Selecciona un capítulo</option>
+                    {capitulosPlano.map((capitulo) => (
+                      <option key={capitulo.id} value={capitulo.id}>{`${'  '.repeat(capitulo.depth)}${capitulo.codigo} · ${capitulo.nombre}`}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="grid gap-1">
+                  <Label className="text-xs">Orden</Label>
+                  <Input type="number" min="0" step="1" value={editOrden} onChange={(event) => setEditOrden(event.target.value)} />
+                </div>
+              </div>
+
               <div className="flex items-center justify-between rounded-xl border border-border/50 bg-muted/20 px-4 py-3 text-sm">
                 <span className="text-muted-foreground">Total estimado</span>
                 <span className="font-semibold tabular-nums text-primary">{fmtNum(Number(editCantidad) * Number(editPrecioUnitario))}</span>
@@ -722,7 +854,7 @@ function PresupuestosSinApuPanel({ token, onMessage, initialObraId }: Presupuest
 
               <div className="flex justify-end gap-2">
                 <Button variant="outline" className="rounded-full" onClick={() => setEditingPartida(null)}>Cancelar</Button>
-                <Button className="rounded-full" disabled={savingPartida || !editCantidad || Number(editCantidad) < 0 || !editPrecioUnitario || Number(editPrecioUnitario) < 0} onClick={handleSavePartida}>
+                <Button className="rounded-full" disabled={savingPartida || !editCapituloId || !editCantidad || Number(editCantidad) < 0 || !editPrecioUnitario || Number(editPrecioUnitario) < 0} onClick={handleSavePartida}>
                   {savingPartida ? <LoaderCircle className="size-4 animate-spin" /> : <Pencil className="size-4" />}
                   Guardar cambios
                 </Button>

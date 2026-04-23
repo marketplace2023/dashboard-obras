@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { FileText, LoaderCircle, Pencil, Plus, Save, Trash2 } from 'lucide-react'
+import { FileDown, FileText, LoaderCircle, Pencil, Plus, Save, Trash2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -13,6 +13,7 @@ type MsgState = { tone: 'success' | 'error'; text: string } | null
 type BimObra = { id: string; codigo: string; nombre: string }
 type BimPresupuesto = { id: string; nombre: string; version: number; tipo: string }
 type Partida = { id: string; codigo: string; descripcion: string }
+type CapituloTreeNode = { partidas?: Partida[]; children?: CapituloTreeNode[] }
 type Memoria = {
   id: string
   obra_id: string
@@ -30,6 +31,7 @@ type Props = {
   token: string
   onMessage: (msg: MsgState) => void
   initialObraId?: string
+  onWorkflowChange?: () => void
 }
 
 function unwrapList<T>(data: unknown): T[] {
@@ -75,7 +77,19 @@ function tipoLabel(tipo: Memoria['tipo']) {
   }
 }
 
-function MemoriasDescriptivasPanel({ token, onMessage, initialObraId }: Props) {
+function flattenPartidas(nodes: CapituloTreeNode[]): Partida[] {
+  const rows: Partida[] = []
+  const walk = (items: CapituloTreeNode[]) => {
+    for (const item of items) {
+      rows.push(...(item.partidas ?? []))
+      if (item.children?.length) walk(item.children)
+    }
+  }
+  walk(nodes)
+  return rows
+}
+
+function MemoriasDescriptivasPanel({ token, onMessage, initialObraId, onWorkflowChange }: Props) {
   const headers = useMemo(() => ({ Authorization: `Bearer ${token}` }), [token])
 
   const [obras, setObras] = useState<BimObra[]>([])
@@ -143,9 +157,9 @@ function MemoriasDescriptivasPanel({ token, onMessage, initialObraId }: Props) {
       fetch(`${API_BASE_URL}/memorias/obra/${selectedObraId}?presupuestoId=${selectedPresupuestoId}`, { headers }),
     ])
       .then(async ([presupuestoRes, memoriasRes]) => {
-        const presupuestoData = await presupuestoRes.json() as { capitulos?: Array<{ partidas?: Partida[] }> }
+        const presupuestoData = await presupuestoRes.json() as { capitulos?: CapituloTreeNode[] }
         const memoriasData = await memoriasRes.json() as unknown
-        const nextPartidas = (presupuestoData.capitulos ?? []).flatMap((capitulo) => capitulo.partidas ?? [])
+        const nextPartidas = flattenPartidas(presupuestoData.capitulos ?? [])
         const nextMemorias = unwrapList<Memoria>(memoriasData)
         setPartidas(nextPartidas)
         setMemorias(nextMemorias)
@@ -209,6 +223,7 @@ function MemoriasDescriptivasPanel({ token, onMessage, initialObraId }: Props) {
         return [memoria, ...current]
       })
       selectMemoria(memoria)
+      onWorkflowChange?.()
       onMessage({ tone: 'success', text: 'Memoria descriptiva guardada.' })
     } catch (error) {
       onMessage({ tone: 'error', text: error instanceof Error ? error.message : 'No se pudo guardar la memoria.' })
@@ -228,6 +243,7 @@ function MemoriasDescriptivasPanel({ token, onMessage, initialObraId }: Props) {
       if (!response.ok) throw new Error('No se pudo eliminar la memoria descriptiva')
       setMemorias((current) => current.filter((item) => item.id !== selectedMemoriaId))
       resetForm()
+      onWorkflowChange?.()
       onMessage({ tone: 'success', text: 'Memoria descriptiva eliminada.' })
     } catch (error) {
       onMessage({ tone: 'error', text: error instanceof Error ? error.message : 'No se pudo eliminar la memoria.' })
@@ -246,9 +262,24 @@ function MemoriasDescriptivasPanel({ token, onMessage, initialObraId }: Props) {
       const memoria = await response.json() as Memoria
       setMemorias((current) => current.map((item) => (item.id === memoria.id ? memoria : item)))
       selectMemoria(memoria)
+      onWorkflowChange?.()
       onMessage({ tone: 'success', text: `Memoria ${nextStatus === 'revisado' ? 'enviada a revisión' : 'aprobada'}.` })
     } catch (error) {
       onMessage({ tone: 'error', text: error instanceof Error ? error.message : 'No se pudo actualizar el estado.' })
+    }
+  }
+
+  async function handlePrint() {
+    if (!selectedObraId || !selectedPresupuestoId) return
+    try {
+      const response = await fetch(`${API_BASE_URL}/reportes/pdf?type=memorias&obraId=${selectedObraId}&presupuestoId=${selectedPresupuestoId}`, { headers })
+      if (!response.ok) throw new Error('No se pudo generar el PDF de memorias')
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
+      window.open(url, '_blank', 'noopener,noreferrer')
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
+    } catch (error) {
+      onMessage({ tone: 'error', text: error instanceof Error ? error.message : 'No se pudo imprimir.' })
     }
   }
 
@@ -279,6 +310,9 @@ function MemoriasDescriptivasPanel({ token, onMessage, initialObraId }: Props) {
           </div>
 
           <div className="flex items-end gap-2 lg:justify-end">
+            <Button type="button" variant="outline" className="rounded-full" onClick={() => void handlePrint()} disabled={!selectedPresupuestoId}>
+              <FileDown className="size-4" />PDF memorias
+            </Button>
             <Button type="button" variant="outline" className="rounded-full" onClick={resetForm}>
               <Plus className="size-4" />Nueva memoria
             </Button>

@@ -70,6 +70,7 @@ type ComputosMetricosPanelProps = {
   token: string
   onMessage: (msg: MsgState) => void
   initialObraId?: string
+  onWorkflowChange?: () => void
 }
 
 function unwrapList<T>(data: unknown): T[] {
@@ -106,7 +107,7 @@ function computeResult(row: Pick<ComputoDetalleRow, 'formula_tipo' | 'cantidad' 
   }
 }
 
-function ComputosMetricosPanel({ token, onMessage, initialObraId }: ComputosMetricosPanelProps) {
+function ComputosMetricosPanel({ token, onMessage, initialObraId, onWorkflowChange }: ComputosMetricosPanelProps) {
   const headers = useMemo(() => ({ Authorization: `Bearer ${token}` }), [token])
 
   const [obras, setObras] = useState<BimObra[]>([])
@@ -302,6 +303,7 @@ function ComputosMetricosPanel({ token, onMessage, initialObraId }: ComputosMetr
       const documento = await response.json() as ComputoDocumento
       setDocumentos((current) => [documento, ...current])
       setSelectedDocumentoId(String(documento.id))
+      onWorkflowChange?.()
       onMessage({ tone: 'success', text: 'Documento de cómputos creado.' })
     } catch (error) {
       onMessage({ tone: 'error', text: error instanceof Error ? error.message : 'No se pudo crear el documento de cómputos.' })
@@ -376,6 +378,7 @@ function ComputosMetricosPanel({ token, onMessage, initialObraId }: ComputosMetr
           ]),
         ),
       )
+      onWorkflowChange?.()
       onMessage({ tone: 'success', text: 'Cómputos guardados.' })
     } catch (error) {
       onMessage({ tone: 'error', text: error instanceof Error ? error.message : 'No se pudieron guardar los cómputos.' })
@@ -413,6 +416,7 @@ function ComputosMetricosPanel({ token, onMessage, initialObraId }: ComputosMetr
       })
       if (!response.ok) throw new Error('No se pudo actualizar el estado del documento')
       await loadResumen()
+      onWorkflowChange?.()
       onMessage({ tone: 'success', text: `Documento ${nextStatus === 'revisado' ? 'enviado a revisión' : 'aprobado'}.` })
     } catch (error) {
       onMessage({ tone: 'error', text: error instanceof Error ? error.message : 'No se pudo actualizar el estado.' })
@@ -420,10 +424,10 @@ function ComputosMetricosPanel({ token, onMessage, initialObraId }: ComputosMetr
   }
 
   async function handlePrint() {
-    if (!selectedPresupuestoId || !selectedObraId) return
+    if (!selectedPresupuestoId || !selectedObraId || !selectedDocumentoId) return
     try {
       const response = await fetch(
-        `${API_BASE_URL}/reportes/pdf?type=comparativo&obraId=${selectedObraId}&presupuestoId=${selectedPresupuestoId}`,
+        `${API_BASE_URL}/reportes/pdf?type=computos&obraId=${selectedObraId}&presupuestoId=${selectedPresupuestoId}&documentoId=${selectedDocumentoId}`,
         { headers },
       )
       if (!response.ok) throw new Error('No se pudo generar el PDF')

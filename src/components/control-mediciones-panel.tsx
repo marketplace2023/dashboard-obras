@@ -472,7 +472,7 @@ function ControlMedicionesPanel({ token, onMessage, initialObraId }: ControlMedi
       <Card className="border-border/60 bg-card/90 shadow-sm">
         <CardHeader className="pb-3">
           <CardTitle className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Resumen de mediciones</CardTitle>
-          <CardDescription className="text-xs">Presupuestado, anterior, actual, acumulado y avance global.</CardDescription>
+          <CardDescription className="text-xs">Presupuestado, anterior, actual, acumulado y avance global. `Anterior` solo considera documentos en revisión o aprobados.</CardDescription>
         </CardHeader>
         <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
           <MetricCard label="Presupuestado" value={resumen?.resumen.presupuestado ?? '0'} />
@@ -510,12 +510,12 @@ function ControlMedicionesPanel({ token, onMessage, initialObraId }: ControlMedi
                 <Label className="text-xs">Fecha</Label>
                 <div className="relative">
                   <CalendarDays className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                  <Input type="date" value={documentoFecha} onChange={(event) => setDocumentoFecha(event.target.value)} className="pl-10" disabled={!selectedDocumentoId} />
+                  <Input type="date" value={documentoFecha} onChange={(event) => setDocumentoFecha(event.target.value)} className="pl-10" disabled={!selectedDocumentoId || resumen?.documento.status !== 'borrador'} />
                 </div>
               </div>
               <div className="grid gap-1.5">
                 <Label className="text-xs">Titulo</Label>
-                <Input value={documentoTitulo} onChange={(event) => setDocumentoTitulo(event.target.value)} placeholder="CONTROL DE MEDICIONES Nro. 1" disabled={!selectedDocumentoId} />
+                <Input value={documentoTitulo} onChange={(event) => setDocumentoTitulo(event.target.value)} placeholder="CONTROL DE MEDICIONES Nro. 1" disabled={!selectedDocumentoId || resumen?.documento.status !== 'borrador'} />
               </div>
             </div>
 
@@ -523,7 +523,7 @@ function ControlMedicionesPanel({ token, onMessage, initialObraId }: ControlMedi
               <div className="rounded-full border border-border/60 px-3 py-2 text-xs uppercase tracking-wide text-muted-foreground">
                 {resumen?.documento.status ?? 'borrador'}
               </div>
-              <Button variant="outline" className="rounded-full" onClick={handleSaveHeader} disabled={!selectedDocumentoId}>
+              <Button variant="outline" className="rounded-full" onClick={handleSaveHeader} disabled={!selectedDocumentoId || resumen?.documento.status !== 'borrador'}>
                 <Pencil className="size-4" />
                 Guardar cabecera
               </Button>
@@ -533,7 +533,7 @@ function ControlMedicionesPanel({ token, onMessage, initialObraId }: ControlMedi
               <Button variant="outline" className="rounded-full" onClick={() => void handleStatusChange('aprobado')} disabled={!selectedDocumentoId || !resumen || resumen.documento.status !== 'revisado'}>
                 Aprobar
               </Button>
-              <Button className="rounded-full" onClick={handleSaveDetalles} disabled={!selectedDocumentoId || savingDetalles || !resumen}>
+              <Button className="rounded-full" onClick={handleSaveDetalles} disabled={!selectedDocumentoId || savingDetalles || !resumen || resumen.documento.status !== 'borrador'}>
                 {savingDetalles ? <LoaderCircle className="size-4 animate-spin" /> : <Save className="size-4" />}
                 Guardar mediciones
               </Button>
@@ -615,6 +615,7 @@ function ControlMedicionesPanel({ token, onMessage, initialObraId }: ControlMedi
                             value={draftActuales[row.partida_id] ?? row.cantidad_actual}
                             onChange={(event) => setDraftActuales((current) => ({ ...current, [row.partida_id]: event.target.value }))}
                             className="h-8 min-w-[110px] text-right tabular-nums"
+                            disabled={resumen?.documento.status !== 'borrador'}
                           />
                         </td>
                         <td className="px-3 py-2 text-right tabular-nums font-medium text-foreground">{fmtNum(acumulada, 2)}</td>
